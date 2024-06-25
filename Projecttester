@@ -1,0 +1,65 @@
+import geopandas as gpd
+import pandas as pd
+import folium
+from folium.plugins import HeatMapWithTime
+from shapely.geometry import Point
+import branca.colormap as cm
+
+# Load the data
+data = pd.read_csv('well_data.csv')  # Replace with your CSV file
+shape_data = gpd.read_file('townships_shapefile.shp')  # Replace with your shapefile
+
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(data['longitude'], data['latitude'])]
+geo_data = gpd.GeoDataFrame(data, geometry=geometry)
+
+# Function to filter and create heatmap with time and legend
+def create_heatmap_html(eur_months, formation, wells_per_section, propant_intensity):
+    filtered_data = geo_data[
+        (geo_data['EUR_months'] == eur_months) &
+        (geo_data['formation'] == formation) &
+        (geo_data['wells_per_section'] == wells_per_section) &
+        (geo_data['propant_intensity'] == propant_intensity)
+    ]
+
+    # Ensure the data is sorted by time index
+    filtered_data = filtered_data.sort_values(by='time_index')  # Replace 'time_index' with your actual time column name
+
+    # Create a base map
+    m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
+
+    # Prepare data for HeatMapWithTime
+    heat_data = []
+    time_points = filtered_data['time_index'].unique()  # Replace 'time_index' with your actual time column name
+    for time_point in time_points:
+        time_slice = filtered_data[filtered_data['time_index'] == time_point]  # Replace 'time_index' with your actual time column name
+        heat_data.append([[point.xy[1][0], point.xy[0][0], val] for point, val in zip(time_slice.geometry, time_slice['EUR_value'])])  # Replace 'EUR_value' with your actual column name
+
+    # Create a colormap
+    colormap = cm.LinearColormap(
+        colors=['blue', 'green', 'yellow', 'orange', 'red'],
+        vmin=filtered_data['EUR_value'].min(),  # Replace 'EUR_value' with the actual column name
+        vmax=filtered_data['EUR_value'].max(),  # Replace 'EUR_value' with the actual column name
+        caption='EUR Value'  # Legend caption
+    )
+
+    # Add HeatMapWithTime
+    HeatMapWithTime(
+        data=heat_data,
+        index=[str(time_point) for time_point in time_points],
+        radius=15,
+        auto_play=True,
+        max_opacity=0.8
+    ).add_to(m)
+
+    # Add township boundaries
+    folium.GeoJson(shape_data).add_to(m)
+
+    # Add colormap to map
+    colormap.add_to(m)
+
+    # Save to HTML
+    m.save('heatmap.html')
+
+# Example usage
+create_heatmap_html(12, 'FormationA', 5, 1000)
