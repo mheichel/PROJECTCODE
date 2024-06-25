@@ -14,35 +14,134 @@ wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 6 Months'] < np.nanpercentile(wel
 wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 60 Months'] < np.nanpercentile(wells_df['EUR/PLL (BBL/FT) 60 Months'], 95)]
 wells_df = wells_df.reset_index()
 
-# Load the GeoJSON file for the geographical boundaries
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
+
+# Load the GeoJSON file for the township boundaries
 shape_data = gpd.read_file('townships_shapefile.shp')  # Replace with your shapefile
 
-# Merge your data with the shape data
-shape_data['API 14'] = shape_data['API 14'].astype(str)
-wells_df['API 14'] = wells_df['API 14'].astype(str)
-merged = shape_data.merge(wells_df, on='API 14')
-
 # Create a base map
-m = folium.Map(location=[merged.geometry.y.mean(), merged.geometry.x.mean()], zoom_start=10)
+m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
 
-# Add a choropleth layer
-folium.Choropleth(
-    geo_data=merged,
-    name='choropleth',
-    data=merged,
-    columns=['API 14', 'EUR/PLL (BBL/FT) 60 Months'],  # Replace with your column names
-    key_on='feature.properties.API 14',
-    fill_color='YlOrRd',
-    fill_opacity=0.7,
-    line_opacity=0.2,
-    legend_name='EUR/PLL (BBL/FT) 60 Months'
-).add_to(m)
+# Add the township boundaries as a GeoJSON layer
+folium.GeoJson(shape_data, name='Townships').add_to(m)
 
-# Add township boundaries
-folium.GeoJson(shape_data).add_to(m)
+# Create a colormap for 6 months
+colormap_6 = cm.LinearColormap(
+    colors=['blue', 'green', 'yellow', 'orange', 'red'],
+    vmin=wells_df['EUR/PLL (BBL/FT) 6 Months'].min(),
+    vmax=wells_df['EUR/PLL (BBL/FT) 6 Months'].max(),
+    caption='EUR Value (6 Months)'
+)
+
+# Create a colormap for 60 months
+colormap_60 = cm.LinearColormap(
+    colors=['blue', 'green', 'yellow', 'orange', 'red'],
+    vmin=wells_df['EUR/PLL (BBL/FT) 60 Months'].min(),
+    vmax=wells_df['EUR/PLL (BBL/FT) 60 Months'].max(),
+    caption='EUR Value (60 Months)'
+)
+
+# Function to add choropleth for a specific time period
+def add_choropleth(m, geo_data, col, colormap):
+    folium.Choropleth(
+        geo_data=geo_data,
+        name=f'choropleth_{col}',
+        data=geo_data,
+        columns=['API 14', col],
+        key_on='feature.properties.API 14',
+        fill_color='YlOrRd',
+        fill_opacity=0.7,
+        line_opacity=0.2,
+        legend_name=f'{col}'
+    ).add_to(m)
+    colormap.add_to(m)
+
+# Add initial choropleth layer for 6 months
+add_choropleth(m, geo_data, 'EUR/PLL (BBL/FT) 6 Months', colormap_6)
 
 # Add layer control
 folium.LayerControl().add_to(m)
+
+# Add a dropdown to switch between time periods
+from folium import Map, LayerControl
+from folium.features import CustomIcon
+
+dropdown = folium.map.FeatureGroup(name='Dropdown', show=True)
+
+# JavaScript function to update the choropleth layer
+update_js = """
+function updateChoropleth(layerName) {
+    for (var i in map._layers) {
+        if (map._layers[i].options && map._layers[i].options.name) {
+            if (map._layers[i].options.name.includes('choropleth')) {
+                map.removeLayer(map._layers[i]);
+            }
+        }
+    }
+    if (layerName === '6 Months') {
+        add_choropleth_6();
+    } else if (layerName === '60 Months') {
+        add_choropleth_60();
+    }
+}
+
+function add_choropleth_6() {
+    var choropleth = L.choropleth(geo_data, {
+        valueProperty: 'EUR/PLL (BBL/FT) 6 Months',
+        scale: ['blue', 'green', 'yellow', 'orange', 'red'],
+        steps: 10,
+        mode: 'q',
+        style: {
+            color: '#fff',
+            weight: 2,
+            fillOpacity: 0.7
+        },
+        onEachFeature: function (feature, layer) {
+            layer.bindPopup(feature.properties.API + '<br>' + feature.properties['EUR/PLL (BBL/FT) 6 Months']);
+        }
+    }).addTo(map);
+    colormap_6.addTo(map);
+}
+
+function add_choropleth_60() {
+    var choropleth = L.choropleth(geo_data, {
+        valueProperty: 'EUR/PLL (BBL/FT) 60 Months',
+        scale: ['blue', 'green', 'yellow', 'orange', 'red'],
+        steps: 10,
+        mode: 'q',
+        style: {
+            color: '#fff',
+            weight: 2,
+            fillOpacity: 0.7
+        },
+        onEachFeature: function (feature, layer) {
+            layer.bindPopup(feature.properties.API + '<br>' + feature.properties['EUR/PLL (BBL/FT) 60 Months']);
+        }
+    }).addTo(map);
+    colormap_60.addTo(map);
+}
+"""
+
+dropdown_script = folium.Element(
+    f"""<script>{update_js}</script>"""
+)
+
+dropdown_html = folium.Html(
+    """
+    <select onchange="updateChoropleth(this.value)">
+        <option value="6 Months">6 Months</option>
+        <option value="60 Months">60 Months</option>
+    </select>
+    """,
+    script=True
+)
+
+dropdown_frame = folium.Figure().add_child(dropdown_html)
+
+m.get_root().html.add_child(dropdown_script)
+m.get_root().html.add_child(dropdown_frame)
 
 # Save to HTML
 m.save('choropleth_map.html')
