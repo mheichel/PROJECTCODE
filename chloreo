@@ -1,0 +1,50 @@
+import pandas as pd
+import folium
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import branca.colormap as cm
+
+# Load the wells_df
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=['API 14', 'Surface Longitude', 'Surface Latitude', 'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 60 Months'])
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 6 Months'] > 0.1]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 6 Months'] < np.nanpercentile(wells_df['EUR/PLL (BBL/FT) 6 Months'], 95)]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 60 Months'] < np.nanpercentile(wells_df['EUR/PLL (BBL/FT) 60 Months'], 95)]
+wells_df = wells_df.reset_index()
+
+# Load the GeoJSON file for the geographical boundaries
+shape_data = gpd.read_file('townships_shapefile.shp')  # Replace with your shapefile
+
+# Merge your data with the shape data
+shape_data['API 14'] = shape_data['API 14'].astype(str)
+wells_df['API 14'] = wells_df['API 14'].astype(str)
+merged = shape_data.merge(wells_df, on='API 14')
+
+# Create a base map
+m = folium.Map(location=[merged.geometry.y.mean(), merged.geometry.x.mean()], zoom_start=10)
+
+# Add a choropleth layer
+folium.Choropleth(
+    geo_data=merged,
+    name='choropleth',
+    data=merged,
+    columns=['API 14', 'EUR/PLL (BBL/FT) 60 Months'],  # Replace with your column names
+    key_on='feature.properties.API 14',
+    fill_color='YlOrRd',
+    fill_opacity=0.7,
+    line_opacity=0.2,
+    legend_name='EUR/PLL (BBL/FT) 60 Months'
+).add_to(m)
+
+# Add township boundaries
+folium.GeoJson(shape_data).add_to(m)
+
+# Add layer control
+folium.LayerControl().add_to(m)
+
+# Save to HTML
+m.save('choropleth_map.html')
+
+print("HTML file created successfully: choropleth_map.html")
