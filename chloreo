@@ -2,7 +2,7 @@ import pandas as pd
 import folium
 import geopandas as gpd
 import numpy as np
-from shapely.geometry import Point, box
+from shapely.geometry import Point
 import branca.colormap as cm
 
 # Load the wells_df
@@ -21,72 +21,61 @@ geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
 # Set the CRS to WGS84 (EPSG:4326)
 geo_data.set_crs(epsg=4326, inplace=True)
 
-# Define grid parameters
-minx, miny, maxx, maxy = geo_data.total_bounds
-grid_size = 0.1  # Grid size in degrees
+# Load the township boundaries shapefile
+shape_data = gpd.read_file('townships_shapefile.shp')  # Replace with your shapefile path
 
-# Create a grid
-grid_cells = []
-for x in np.arange(minx, maxx, grid_size):
-    for y in np.arange(miny, maxy, grid_size):
-        grid_cells.append(box(x, y, x + grid_size, y + grid_size))
+# Ensure the CRS for the township boundaries is set to WGS84
+shape_data.to_crs(epsg=4326, inplace=True)
 
-grid = gpd.GeoDataFrame(grid_cells, columns=['geometry'], crs="EPSG:4326")
+# Spatial join to assign points to township polygons
+joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
 
-# Spatial join to assign points to grid cells
-joined = gpd.sjoin(geo_data, grid, how='left', op='within')
-
-# Calculate average values for each grid cell
-grid['avg_6_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 6 Months'].mean()
-grid['avg_60_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 60 Months'].mean()
+# Calculate average values for each township polygon
+shape_data['avg_6_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 6 Months'].mean()
+shape_data['avg_60_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 60 Months'].mean()
 
 # Replace NaN values with 0 for visualization
-grid['avg_6_months'] = grid['avg_6_months'].fillna(0)
-grid['avg_60_months'] = grid['avg_60_months'].fillna(0)
+shape_data['avg_6_months'] = shape_data['avg_6_months'].fillna(0)
+shape_data['avg_60_months'] = shape_data['avg_60_months'].fillna(0)
 
 # Convert to GeoJSON
-grid_json_6 = grid[['geometry', 'avg_6_months']].to_json()
-grid_json_60 = grid[['geometry', 'avg_60_months']].to_json()
-
+shape_json_6 = shape_data[['geometry', 'avg_6_months']].to_json()
+shape_json_60 = shape_data[['geometry', 'avg_60_months']].to_json()
 
 # Create a base map
 m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
 
-# Add township boundaries if needed
-# shape_data = gpd.read_file('townships_shapefile.shp')  # Replace with your shapefile
-# folium.GeoJson(shape_data, name='Townships').add_to(m)
-
 # Create colormaps
 colormap_6 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                               vmin=grid['avg_6_months'].min(),
-                               vmax=grid['avg_6_months'].max(),
+                               vmin=shape_data['avg_6_months'].min(),
+                               vmax=shape_data['avg_6_months'].max(),
                                caption='EUR Value (6 Months)')
 
 colormap_60 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                vmin=grid['avg_60_months'].min(),
-                                vmax=grid['avg_60_months'].max(),
+                                vmin=shape_data['avg_60_months'].min(),
+                                vmax=shape_data['avg_60_months'].max(),
                                 caption='EUR Value (60 Months)')
 
 # Function to add choropleth for a specific time period
-def add_choropleth(m, grid_json, colormap):
+def add_choropleth(m, shape_json, colormap, field):
     folium.GeoJson(
-        grid_json,
+        shape_json,
         style_function=lambda feature: {
-            'fillColor': colormap(feature['properties']['avg_6_months']),
+            'fillColor': colormap(feature['properties'][field]),
             'color': 'black',
             'weight': 0.5,
             'fillOpacity': 0.7,
         },
         tooltip=folium.GeoJsonTooltip(
-            fields=['avg_6_months'],
-            aliases=['EUR (6 Months)'],
+            fields=[field],
+            aliases=['EUR Value'],
             localize=True
         )
     ).add_to(m)
     colormap.add_to(m)
 
 # Add initial choropleth layer for 6 months
-add_choropleth(m, grid_json_6, colormap_6)
+add_choropleth(m, shape_json_6, colormap_6, 'avg_6_months')
 
 # Add layer control
 folium.LayerControl().add_to(m)
@@ -100,7 +89,7 @@ dropdown_script = """
     function updateChoropleth(layerName) {
         var mapLayers = map._layers;
         for (var i in mapLayers) {
-            if (mapLayers[i].feature && mapLayers[i].feature.properties && mapLayers[i].feature.properties.avg_6_months) {
+            if (mapLayers[i].feature && mapLayers[i].feature.properties && (mapLayers[i].feature.properties.avg_6_months !== undefined || mapLayers[i].feature.properties.avg_60_months !== undefined)) {
                 map.removeLayer(mapLayers[i]);
             }
         }
@@ -112,7 +101,7 @@ dropdown_script = """
     }
 
     function add_choropleth_6() {
-        var choropleth_6 = L.geoJson(null, {
+        var choropleth_6 = L.geoJson(shape_json_6, {
             style: function (feature) {
                 return {
                     fillColor: colormap_6(feature.properties.avg_6_months),
@@ -124,16 +113,12 @@ dropdown_script = """
             onEachFeature: function (feature, layer) {
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }
-        });
-        $.getJSON(grid_json_6, function (data) {
-            choropleth_6.addData(data);
-        });
-        choropleth_6.addTo(map);
+        }).addTo(map);
         colormap_6.addTo(map);
     }
 
     function add_choropleth_60() {
-        var choropleth_60 = L.geoJson(null, {
+        var choropleth_60 = L.geoJson(shape_json_60, {
             style: function (feature) {
                 return {
                     fillColor: colormap_60(feature.properties.avg_60_months),
@@ -145,11 +130,7 @@ dropdown_script = """
             onEachFeature: function (feature, layer) {
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
             }
-        });
-        $.getJSON(grid_json_60, function (data) {
-            choropleth_60.addData(data);
-        });
-        choropleth_60.addTo(map);
+        }).addTo(map);
         colormap_60.addTo(map);
     }
 </script>
