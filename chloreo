@@ -34,13 +34,8 @@ joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
 shape_data['avg_6_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 6 Months'].mean()
 shape_data['avg_60_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 60 Months'].mean()
 
-# Replace NaN values with 0 for visualization
-shape_data['avg_6_months'] = shape_data['avg_6_months'].fillna(0)
-shape_data['avg_60_months'] = shape_data['avg_60_months'].fillna(0)
-
-# Convert to GeoJSON
-shape_json_6 = shape_data[['geometry', 'avg_6_months']].to_json()
-shape_json_60 = shape_data[['geometry', 'avg_60_months']].to_json()
+# Drop sections where the average value is 0
+shape_data = shape_data[(shape_data['avg_6_months'] > 0) | (shape_data['avg_60_months'] > 0)]
 
 # Create a base map
 m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
@@ -56,60 +51,69 @@ colormap_60 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 're
                                 vmax=shape_data['avg_60_months'].max(),
                                 caption='EUR Value (60 Months)')
 
-# Function to add choropleth for a specific time period
-def add_choropleth(m, shape_json, colormap, field):
-    folium.GeoJson(
-        shape_json,
+# Function to add GeoJson layer
+def add_geojson_layer(column, colormap):
+    geojson = shape_data[['geometry', column]].to_json()
+    layer = folium.GeoJson(
+        geojson,
+        name=column,
         style_function=lambda feature: {
-            'fillColor': colormap(feature['properties'][field]),
+            'fillColor': colormap(feature['properties'][column]),
             'color': 'black',
             'weight': 0.5,
             'fillOpacity': 0.7,
         },
         tooltip=folium.GeoJsonTooltip(
-            fields=[field],
-            aliases=['EUR Value'],
+            fields=[column],
+            aliases=[f'{column} Value'],
             localize=True
         )
-    ).add_to(m)
-    colormap.add_to(m)
+    )
+    return layer
 
-# Add initial choropleth layer for 6 months
-add_choropleth(m, shape_json_6, colormap_6, 'avg_6_months')
+# Add layers
+layer_6 = add_geojson_layer('avg_6_months', colormap_6)
+layer_60 = add_geojson_layer('avg_60_months', colormap_60)
 
-# Add layer control
+layer_6.add_to(m)  # Add the initial layer to the map
+layer_60.add_to(m)  # Add the second layer to the map
+
+# Add the layer control to switch layers
 folium.LayerControl().add_to(m)
 
-# Add a dropdown to switch between time periods
-from folium import Map, LayerControl
-from folium.features import CustomIcon
+# Save the map to an HTML file
+m.save('choropleth_map.html')
 
-dropdown_script = f"""
-<script>
-    var colormap_6 = {colormap_6._repr_html_()};
-    var colormap_60 = {colormap_60._repr_html_()};
+# Create the dynamic HTML with JavaScript to toggle layers
+html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <select id="layer-select" onchange="updateMap()">
+        <option value="avg_6_months">6 Months</option>
+        <option value="avg_60_months">60 Months</option>
+    </select>
+    <div id="map" style="width: 100%; height: 600px;"></div>
+    <script>
+        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
 
-    function updateChoropleth(layerName) {{
-        for (var i in map._layers) {{
-            if (map._layers[i].feature && map._layers[i].feature.properties) {{
-                if ('avg_6_months' in map._layers[i].feature.properties || 'avg_60_months' in map._layers[i].feature.properties) {{
-                    map.removeLayer(map._layers[i]);
-                }}
-            }}
-        }}
-        if (layerName === '6 Months') {{
-            add_choropleth_6();
-        }} else if (layerName === '60 Months') {{
-            add_choropleth_60();
-        }}
-    }}
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }}).addTo(map);
 
-    function add_choropleth_6() {{
-        var colormap_6 = {colormap_6._repr_html_()};
-        L.geoJson({shape_json_6}, {{
+        var layer_6 = L.geoJson({shape_data[['geometry', 'avg_6_months']].to_json()}, {{
             style: function (feature) {{
                 return {{
-                    fillColor: colormap_6(feature.properties.avg_6_months),
+                    fillColor: '{colormap_6(0.5)}',
                     color: 'black',
                     weight: 0.5,
                     fillOpacity: 0.7
@@ -119,15 +123,11 @@ dropdown_script = f"""
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }}
         }}).addTo(map);
-        colormap_6.addTo(map);
-    }}
 
-    function add_choropleth_60() {{
-        var colormap_60 = {colormap_60._repr_html_()};
-        L.geoJson({shape_json_60}, {{
+        var layer_60 = L.geoJson({shape_data[['geometry', 'avg_60_months']].to_json()}, {{
             style: function (feature) {{
                 return {{
-                    fillColor: colormap_60(feature.properties.avg_60_months),
+                    fillColor: '{colormap_60(0.5)}',
                     color: 'black',
                     weight: 0.5,
                     fillOpacity: 0.7
@@ -136,22 +136,25 @@ dropdown_script = f"""
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
             }}
-        }}).addTo(map);
-        colormap_60.addTo(map);
-    }}
-</script>
+        }});
+
+        function updateMap() {{
+            var selectedLayer = document.getElementById('layer-select').value;
+            if (selectedLayer === 'avg_6_months') {{
+                map.removeLayer(layer_60);
+                map.addLayer(layer_6);
+            }} else {{
+                map.removeLayer(layer_6);
+                map.addLayer(layer_60);
+            }}
+        }}
+    </script>
+</body>
+</html>
 """
 
-dropdown_html = """
-<select onchange="updateChoropleth(this.value)">
-    <option value="6 Months">6 Months</option>
-    <option value="60 Months">60 Months</option>
-</select>
-"""
-m.get_root().html.add_child(folium.Element(dropdown_script))
-m.get_root().html.add_child(folium.Element(dropdown_html))
+# Save the HTML template
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
 
-# Save to HTML
-m.save('choropleth_map.html')
-
-print("HTML file created successfully: choropleth_map.html")
+print("HTML file created successfully: dynamic_map.html")
