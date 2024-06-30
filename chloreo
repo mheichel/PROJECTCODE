@@ -119,8 +119,13 @@ html_template = f"""
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }}).addTo(map);
 
-        var colormap_6 = L.linearColors({{colors: ['blue', 'green', 'yellow', 'orange', 'red'], min: {shape_data['avg_6_months'].min()}, max: {shape_data['avg_6_months'].max()}}});
-        var colormap_60 = L.linearColors({{colors: ['blue', 'green', 'yellow', 'orange', 'red'], min: {shape_data['avg_60_months'].min()}, max: {shape_data['avg_60_months'].max()}}});
+        var colormap_6 = d3.scale.linear()
+            .domain([{shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
+
+        var colormap_60 = d3.scale.linear()
+            .domain([{shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
 
         function style_6(feature) {{
             return {{
