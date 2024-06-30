@@ -1,6 +1,14 @@
-# Extract the embedded Leaflet CSS and JavaScript
-leaflet_css = m.get_root().header.render().split('<style')[1].split('</style>')[0]
-leaflet_js = m.get_root().scripts.render().split('<script')[1].split('</script>')[0]
+# Generate the Folium map as an HTML string
+map_html = m.get_root().render()
+
+# Manually include the Leaflet CSS and JavaScript directly in the HTML template
+leaflet_css = """
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+"""
+
+leaflet_js = """
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+"""
 
 # Generate HTML template
 html_template = f"""
@@ -10,8 +18,8 @@ html_template = f"""
     <title>Dynamic Map</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {leaflet_css}
     <style>
-        {leaflet_css}
         html, body {{
             height: 100%;
             margin: 0;
@@ -50,8 +58,8 @@ html_template = f"""
         </select>
     </div>
     <div id="map">{map_html}</div>
+    {leaflet_js}
     <script>
-        {leaflet_js}
         var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
 
