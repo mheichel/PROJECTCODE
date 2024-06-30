@@ -2,13 +2,13 @@
 colormap_6 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (6 Months)').reversed()
 colormap_60 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (60 Months)').reversed()
 
-# Serialize colormap data
-colormap_6_json = colormap_6.to_step(n=10).to_dict()
-colormap_60_json = colormap_60.to_step(n=10).to_dict()
-
 # Create GeoJSON data for both datasets
 geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
 geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
+
+# Convert colormap to list for JSON serialization
+colormap_6_json = list(colormap_6.colors)
+colormap_60_json = list(colormap_60.colors)
 
 # Generate HTML
 html_template = f"""
@@ -68,10 +68,10 @@ html_template = f"""
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }}).addTo(map);
 
-        var colormap_6 = d3.scaleSequential(d3.interpolateRdYlBu)
+        var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({json.dumps(colormap_6_json)}))
             .domain([225, 25]);
 
-        var colormap_60 = d3.scaleSequential(d3.interpolateRdYlBu)
+        var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({json.dumps(colormap_60_json)}))
             .domain([225, 25]);
 
         function style_6(feature) {{
@@ -168,9 +168,3 @@ html_template = f"""
 </body>
 </html>
 """
-
-# Save the HTML template
-with open('dynamic_map.html', 'w') as f:
-    f.write(html_template)
-
-print("HTML file created successfully: dynamic_map.html")
