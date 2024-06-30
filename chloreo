@@ -37,9 +37,6 @@ shape_data['avg_60_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 60
 # Drop sections where the average value is 0
 shape_data = shape_data[(shape_data['avg_6_months'] > 0) | (shape_data['avg_60_months'] > 0)]
 
-# Create a base map
-m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
-
 # Create colormaps
 colormap_6 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
                                vmin=shape_data['avg_6_months'].min(),
@@ -51,40 +48,11 @@ colormap_60 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 're
                                 vmax=shape_data['avg_60_months'].max(),
                                 caption='EUR Value (60 Months)')
 
-# Function to add GeoJson layer
-def add_geojson_layer(column, colormap):
-    geojson = shape_data[['geometry', column]].to_json()
-    layer = folium.GeoJson(
-        geojson,
-        name=column,
-        style_function=lambda feature: {
-            'fillColor': colormap(feature['properties'][column]),
-            'color': 'black',
-            'weight': 0.5,
-            'fillOpacity': 0.7,
-        },
-        tooltip=folium.GeoJsonTooltip(
-            fields=[column],
-            aliases=[f'{column} Value'],
-            localize=True
-        )
-    )
-    return layer
+# Create GeoJSON data for both datasets
+geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
+geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
 
-# Add layers
-layer_6 = add_geojson_layer('avg_6_months', colormap_6)
-layer_60 = add_geojson_layer('avg_60_months', colormap_60)
-
-layer_6.add_to(m)  # Add the initial layer to the map
-layer_60.add_to(m)  # Add the second layer to the map
-
-# Add the layer control to switch layers
-folium.LayerControl().add_to(m)
-
-# Save the map to an HTML file
-m.save('choropleth_map.html')
-
-# Create the dynamic HTML with JavaScript to toggle layers
+# Generate HTML
 html_template = f"""
 <!DOCTYPE html>
 <html>
@@ -102,14 +70,27 @@ html_template = f"""
             width: 100%;
             height: 100%;
         }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
     </style>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
-    <select id="layer-select" onchange="updateMap()">
-        <option value="avg_6_months">6 Months</option>
-        <option value="avg_60_months">60 Months</option>
-    </select>
+    <div id="controls">
+        <select id="layer-select" onchange="updateMap()">
+            <option value="avg_6_months">6 Months</option>
+            <option value="avg_60_months">60 Months</option>
+        </select>
+    </div>
     <div id="map"></div>
     <script>
         var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
@@ -119,11 +100,11 @@ html_template = f"""
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }}).addTo(map);
 
-        var colormap_6 = d3.scale.linear()
+        var colormap_6 = d3.scaleLinear()
             .domain([{shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()}])
             .range(["blue", "green", "yellow", "orange", "red"]);
 
-        var colormap_60 = d3.scale.linear()
+        var colormap_60 = d3.scaleLinear()
             .domain([{shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()}])
             .range(["blue", "green", "yellow", "orange", "red"]);
 
@@ -145,14 +126,14 @@ html_template = f"""
             }};
         }}
 
-        var layer_6 = L.geoJson({shape_data[['geometry', 'avg_6_months']].to_json()}, {{
+        var layer_6 = L.geoJson({geojson_6}, {{
             style: style_6,
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }}
         }}).addTo(map);
 
-        var layer_60 = L.geoJson({shape_data[['geometry', 'avg_60_months']].to_json()}, {{
+        var layer_60 = L.geoJson({geojson_60}, {{
             style: style_60,
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
