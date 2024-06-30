@@ -1,0 +1,158 @@
+# Generate HTML
+html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        html, body {{
+            height: 100%;
+            margin: 0;
+        }}
+        #map {{
+            width: 100%;
+            height: 100%;
+        }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+        .legend {{
+            background: white;
+            line-height: 1.5em;
+            color: #555;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+    </style>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <select id="layer-select" onchange="updateMap()">
+            <option value="avg_6_months">6 Months</option>
+            <option value="avg_60_months">60 Months</option>
+        </select>
+    </div>
+    <div id="map"></div>
+    <script>
+        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
+
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }}).addTo(map);
+
+        var colormap_6 = d3.scaleLinear()
+            .domain([{shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
+
+        var colormap_60 = d3.scaleLinear()
+            .domain([{shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
+
+        function style_6(feature) {{
+            return {{
+                fillColor: colormap_6(feature.properties.avg_6_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
+        function style_60(feature) {{
+            return {{
+                fillColor: colormap_60(feature.properties.avg_60_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
+        var layer_6 = L.geoJson({geojson_6}, {{
+            style: style_6,
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
+            }}
+        }}).addTo(map);
+
+        var layer_60 = L.geoJson({geojson_60}, {{
+            style: style_60,
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
+            }}
+        }});
+
+        function updateMap() {{
+            var selectedLayer = document.getElementById('layer-select').value;
+            if (selectedLayer === 'avg_6_months') {{
+                map.removeLayer(layer_60);
+                map.addLayer(layer_6);
+                updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+            }} else {{
+                map.removeLayer(layer_6);
+                map.addLayer(layer_60);
+                updateLegend(colormap_60, {shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()});
+            }}
+        }}
+
+        function updateLegend(colormap, min, max) {{
+            var legend = d3.select('.legend');
+            legend.html('<h4>EUR Value</h4>');
+            var legendScale = d3.scaleLinear()
+                .domain([min, max])
+                .range([0, 300]);
+            var legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickFormat(d3.format(".2f"));
+
+            var svg = legend.append('svg')
+                .attr('width', 320)
+                .attr('height', 50);
+
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', 'translate(10,30)')
+                .call(legendAxis);
+
+            var gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'gradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '0%');
+
+            gradient.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', colormap(min));
+
+            gradient.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', colormap(max));
+
+            svg.append('rect')
+                .attr('width', 300)
+                .attr('height', 10)
+                .attr('x', 10)
+                .attr('y', 20)
+                .style('fill', 'url(#gradient)');
+        }
+
+        updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+    </script>
+    <div class="legend"></div>
+</body>
+</html>
+"""
