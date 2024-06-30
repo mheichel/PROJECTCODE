@@ -10,7 +10,7 @@ geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
 colormap_6_json = json.dumps(list(colormap_6.colors))
 colormap_60_json = json.dumps(list(colormap_60.colors))
 
-# Create base map with Folium and add the initial layer (6 months)
+# Create base map with Folium
 m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
 folium.GeoJson(geojson_6, name='6 Months', style_function=lambda feature: {
     'fillColor': colormap_6(feature['properties']['avg_6_months']),
@@ -19,15 +19,17 @@ folium.GeoJson(geojson_6, name='6 Months', style_function=lambda feature: {
     'fillOpacity': 0.7
 }).add_to(m)
 
-# Add layer control to switch between layers
-folium.LayerControl().add_to(m)
-
 # Save the map to an HTML file
 m.save('base_map.html')
 
 # Read the generated HTML content of the base map
 with open('base_map.html', 'r') as file:
     base_map_html = file.read()
+
+# Extract the necessary parts of the base_map_html to embed into the final HTML
+start_marker = '<div style="width:100%;height:100%" id="map">'
+end_marker = '</div>'
+base_map_content = base_map_html.split(start_marker)[1].split(end_marker)[0]
 
 # Generate HTML
 html_template = f"""
@@ -72,13 +74,13 @@ html_template = f"""
     <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
-    {base_map_html}
     <div id="controls">
         <select id="layer-select" onchange="updateMap()">
             <option value="avg_6_months">6 Months</option>
             <option value="avg_60_months">60 Months</option>
         </select>
     </div>
+    <div id="map">{base_map_content}</div>
     <script>
         var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
