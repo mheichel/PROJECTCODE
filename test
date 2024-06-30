@@ -1,3 +1,18 @@
+# Create colormaps with fixed min and max values
+colormap_6 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                               vmin=25,
+                               vmax=225,
+                               caption='EUR Value (6 Months)')
+
+colormap_60 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                vmin=25,
+                                vmax=225,
+                                caption='EUR Value (60 Months)')
+
+# Create GeoJSON data for both datasets
+geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
+geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
+
 # Generate HTML
 html_template = f"""
 <!DOCTYPE html>
@@ -55,12 +70,14 @@ html_template = f"""
         }}).addTo(map);
 
         var colormap_6 = d3.scaleLinear()
-            .domain([{shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()}])
-            .range(["blue", "green", "yellow", "orange", "red"]);
+            .domain([25, 225])
+            .range(["blue", "green", "yellow", "orange", "red"])
+            .interpolate(d3.interpolateRgb);
 
         var colormap_60 = d3.scaleLinear()
-            .domain([{shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()}])
-            .range(["blue", "green", "yellow", "orange", "red"]);
+            .domain([25, 225])
+            .range(["blue", "green", "yellow", "orange", "red"])
+            .interpolate(d3.interpolateRgb);
 
         function style_6(feature) {{
             return {{
@@ -99,11 +116,11 @@ html_template = f"""
             if (selectedLayer === 'avg_6_months') {{
                 map.removeLayer(layer_60);
                 map.addLayer(layer_6);
-                updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+                updateLegend(colormap_6, 25, 225);
             }} else {{
                 map.removeLayer(layer_6);
                 map.addLayer(layer_60);
-                updateLegend(colormap_60, {shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()});
+                updateLegend(colormap_60, 25, 225);
             }}
         }}
 
@@ -150,9 +167,15 @@ html_template = f"""
                 .style('fill', 'url(#gradient)');
         }
 
-        updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+        updateLegend(colormap_6, 25, 225);
     </script>
     <div class="legend"></div>
 </body>
 </html>
 """
+
+# Save the HTML template
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
+
+print("HTML file created successfully: dynamic_map.html")
