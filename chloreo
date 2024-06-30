@@ -84,55 +84,61 @@ folium.LayerControl().add_to(m)
 from folium import Map, LayerControl
 from folium.features import CustomIcon
 
-dropdown_script = """
+dropdown_script = f"""
 <script>
-    function updateChoropleth(layerName) {
-        var mapLayers = map._layers;
-        for (var i in mapLayers) {
-            if (mapLayers[i].feature && mapLayers[i].feature.properties && (mapLayers[i].feature.properties.avg_6_months !== undefined || mapLayers[i].feature.properties.avg_60_months !== undefined)) {
-                map.removeLayer(mapLayers[i]);
-            }
-        }
-        if (layerName === '6 Months') {
-            add_choropleth_6();
-        } else if (layerName === '60 Months') {
-            add_choropleth_60();
-        }
-    }
+    var colormap_6 = {colormap_6._repr_html_()};
+    var colormap_60 = {colormap_60._repr_html_()};
 
-    function add_choropleth_6() {
-        var choropleth_6 = L.geoJson(shape_json_6, {
-            style: function (feature) {
-                return {
+    function updateChoropleth(layerName) {{
+        for (var i in map._layers) {{
+            if (map._layers[i].feature && map._layers[i].feature.properties) {{
+                if ('avg_6_months' in map._layers[i].feature.properties || 'avg_60_months' in map._layers[i].feature.properties) {{
+                    map.removeLayer(map._layers[i]);
+                }}
+            }}
+        }}
+        if (layerName === '6 Months') {{
+            add_choropleth_6();
+        }} else if (layerName === '60 Months') {{
+            add_choropleth_60();
+        }}
+    }}
+
+    function add_choropleth_6() {{
+        var colormap_6 = {colormap_6._repr_html_()};
+        L.geoJson({shape_json_6}, {{
+            style: function (feature) {{
+                return {{
                     fillColor: colormap_6(feature.properties.avg_6_months),
                     color: 'black',
                     weight: 0.5,
                     fillOpacity: 0.7
-                };
-            },
-            onEachFeature: function (feature, layer) {
+                }};
+            }},
+            onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
-            }
-        }).addTo(map);
+            }}
+        }}).addTo(map);
         colormap_6.addTo(map);
-    }
+    }}
 
-    function add_choropleth_60() {
-        var choropleth_60 = L.geoJson(shape_json_60, {
-            style: function (feature) {
-                return {
+    function add_choropleth_60() {{
+        var colormap_60 = {colormap_60._repr_html_()};
+        L.geoJson({shape_json_60}, {{
+            style: function (feature) {{
+                return {{
                     fillColor: colormap_60(feature.properties.avg_60_months),
                     color: 'black',
                     weight: 0.5,
                     fillOpacity: 0.7
-                };
-            },
-            onEachFeature: function (feature, layer) {
+                }};
+            }},
+            onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
-            }
-        }).addTo(map);
+            }}
+        }}).addTo(map);
         colormap_60.addTo(map);
-    }
+    }}
 </script>
 """
 
@@ -142,7 +148,6 @@ dropdown_html = """
     <option value="60 Months">60 Months</option>
 </select>
 """
-
 m.get_root().html.add_child(folium.Element(dropdown_script))
 m.get_root().html.add_child(folium.Element(dropdown_html))
 
