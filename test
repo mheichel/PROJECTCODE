@@ -6,9 +6,28 @@ colormap_60 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vm
 geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
 geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
 
-# Convert colormap to list for JSON serialization
-colormap_6_json = list(colormap_6.colors)
-colormap_60_json = list(colormap_60.colors)
+# Serialize colormap to JSON format
+colormap_6_json = json.dumps(list(colormap_6.colors))
+colormap_60_json = json.dumps(list(colormap_60.colors))
+
+# Create base map with Folium and add the initial layer (6 months)
+m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
+folium.GeoJson(geojson_6, name='6 Months', style_function=lambda feature: {
+    'fillColor': colormap_6(feature['properties']['avg_6_months']),
+    'color': 'black',
+    'weight': 0.5,
+    'fillOpacity': 0.7
+}).add_to(m)
+
+# Add layer control to switch between layers
+folium.LayerControl().add_to(m)
+
+# Save the map to an HTML file
+m.save('base_map.html')
+
+# Read the generated HTML content of the base map
+with open('base_map.html', 'r') as file:
+    base_map_html = file.read()
 
 # Generate HTML
 html_template = f"""
@@ -53,54 +72,43 @@ html_template = f"""
     <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
+    {base_map_html}
     <div id="controls">
         <select id="layer-select" onchange="updateMap()">
             <option value="avg_6_months">6 Months</option>
             <option value="avg_60_months">60 Months</option>
         </select>
     </div>
-    <div id="map"></div>
     <script>
-        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
-
-        L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
-            maxZoom: 18,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }}).addTo(map);
-
-        var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({json.dumps(colormap_6_json)}))
+        var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
 
-        var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({json.dumps(colormap_60_json)}))
+        var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_60_json}))
             .domain([225, 25]);
-
-        function style_6(feature) {{
-            return {{
-                fillColor: colormap_6(feature.properties.avg_6_months),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-
-        function style_60(feature) {{
-            return {{
-                fillColor: colormap_60(feature.properties.avg_60_months),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
 
         var layer_6 = L.geoJson({geojson_6}, {{
-            style: style_6,
+            style: function(feature) {{
+                return {{
+                    fillColor: colormap_6(feature.properties.avg_6_months),
+                    color: 'black',
+                    weight: 0.5,
+                    fillOpacity: 0.7
+                }};
+            }},
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }}
-        }}).addTo(map);
+        }});
 
         var layer_60 = L.geoJson({geojson_60}, {{
-            style: style_60,
+            style: function(feature) {{
+                return {{
+                    fillColor: colormap_60(feature.properties.avg_60_months),
+                    color: 'black',
+                    weight: 0.5,
+                    fillOpacity: 0.7
+                }};
+            }},
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
             }}
@@ -168,3 +176,9 @@ html_template = f"""
 </body>
 </html>
 """
+
+# Save the HTML template
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
+
+print("HTML file created successfully: dynamic_map.html")
