@@ -1,8 +1,8 @@
-# Create colormaps with fixed min and max values using a gradient
-colormap_6 = cm.linear.RdYlBu_11.scale(25, 225)
+# Create colormaps with fixed min and max values using a gradient and reverse the gradient
+colormap_6 = cm.linear.RdYlBu_11.scale(25, 225).reversed()
 colormap_6.caption = 'EUR Value (6 Months)'
 
-colormap_60 = cm.linear.RdYlBu_11.scale(25, 225)
+colormap_60 = cm.linear.RdYlBu_11.scale(25, 225).reversed()
 colormap_60.caption = 'EUR Value (60 Months)'
 
 # Create GeoJSON data for both datasets
@@ -68,10 +68,10 @@ html_template = f"""
         }}).addTo(map);
 
         var colormap_6 = d3.scaleSequential(d3.interpolateRdYlBu)
-            .domain([25, 225]);
+            .domain([225, 25]);
 
         var colormap_60 = d3.scaleSequential(d3.interpolateRdYlBu)
-            .domain([25, 225]);
+            .domain([225, 25]);
 
         function style_6(feature) {{
             return {{
