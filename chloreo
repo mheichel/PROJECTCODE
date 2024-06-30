@@ -80,6 +80,14 @@ html_template = f"""
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
+        .legend {{
+            background: white;
+            line-height: 1.5em;
+            color: #555;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
     </style>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://d3js.org/d3.v5.min.js"></script>
@@ -145,12 +153,60 @@ html_template = f"""
             if (selectedLayer === 'avg_6_months') {{
                 map.removeLayer(layer_60);
                 map.addLayer(layer_6);
+                updateLegend(colormap_6, '{shape_data['avg_6_months'].min()}', '{shape_data['avg_6_months'].max()}');
             }} else {{
                 map.removeLayer(layer_6);
                 map.addLayer(layer_60);
+                updateLegend(colormap_60, '{shape_data['avg_60_months'].min()}', '{shape_data['avg_60_months'].max()}');
             }}
         }}
+
+        function updateLegend(colormap, min, max) {{
+            var legend = d3.select('.legend');
+            legend.html('<h4>EUR Value</h4>');
+            var legendScale = d3.scaleLinear()
+                .domain([min, max])
+                .range([0, 300]);
+            var legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickFormat(d3.format(".2f"));
+
+            var svg = legend.append('svg')
+                .attr('width', 320)
+                .attr('height', 50);
+
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', 'translate(10,30)')
+                .call(legendAxis);
+
+            var gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'gradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '0%');
+
+            gradient.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', colormap(min));
+
+            gradient.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', colormap(max));
+
+            svg.append('rect')
+                .attr('width', 300)
+                .attr('height', 10)
+                .attr('x', 10)
+                .attr('y', 20)
+                .style('fill', 'url(#gradient)');
+        }
+
+        updateLegend(colormap_6, '{shape_data['avg_6_months'].min()}', '{shape_data['avg_6_months'].max()}');
     </script>
+    <div class="legend"></div>
 </body>
 </html>
 """
