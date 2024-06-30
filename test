@@ -1,3 +1,7 @@
+# Extract the embedded Leaflet CSS and JavaScript
+leaflet_css = m.get_root().header.render().split('<style')[1].split('</style>')[0]
+leaflet_js = m.get_root().scripts.render().split('<script')[1].split('</script>')[0]
+
 # Generate HTML template
 html_template = f"""
 <!DOCTYPE html>
@@ -6,8 +10,8 @@ html_template = f"""
     <title>Dynamic Map</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
+        {leaflet_css}
         html, body {{
             height: 100%;
             margin: 0;
@@ -37,8 +41,6 @@ html_template = f"""
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
     </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
     <div id="controls">
@@ -49,6 +51,7 @@ html_template = f"""
     </div>
     <div id="map">{map_html}</div>
     <script>
+        {leaflet_js}
         var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
 
@@ -70,7 +73,7 @@ html_template = f"""
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }}
-        }});
+        }}).addTo(map);
 
         var layer_60 = L.geoJson(geojson_60, {{
             style: function(feature) {{
