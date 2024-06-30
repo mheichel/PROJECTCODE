@@ -9,7 +9,7 @@ leaflet_css = """
 </style>
 """
 
-leaflet_js = """
+leaflet_js = f"""
 <script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
 var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
@@ -160,103 +160,6 @@ html_template = f"""
     </div>
     <div id="map">{map_html}</div>
     {leaflet_js}
-    <script>
-        var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
-            .domain([225, 25]);
-
-        var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_60_json}))
-            .domain([225, 25]);
-
-        var geojson_6 = {geojson_6};
-        var geojson_60 = {geojson_60};
-
-        var layer_6 = L.geoJson(geojson_6, {{
-            style: function(feature) {{
-                return {{
-                    fillColor: colormap_6(feature.properties.avg_6_months),
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
-            }}
-        }}).addTo(map);
-
-        var layer_60 = L.geoJson(geojson_60, {{
-            style: function(feature) {{
-                return {{
-                    fillColor: colormap_60(feature.properties.avg_60_months),
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
-            }}
-        }});
-
-        function updateMap() {{
-            var selectedLayer = document.getElementById('layer-select').value;
-            if (selectedLayer === 'avg_6_months') {{
-                map.removeLayer(layer_60);
-                map.addLayer(layer_6);
-                updateLegend(colormap_6, 25, 225);
-            }} else {{
-                map.removeLayer(layer_6);
-                map.addLayer(layer_60);
-                updateLegend(colormap_60, 25, 225);
-            }}
-        }}
-
-        function updateLegend(colormap, min, max) {{
-            var legend = d3.select('.legend');
-            legend.html('<h4>EUR Value</h4>');
-            var legendScale = d3.scaleLinear()
-                .domain([min, max])
-                .range([0, 300]);
-            var legendAxis = d3.axisBottom(legendScale)
-                .ticks(5)
-                .tickFormat(d3.format(".2f"));
-
-            var svg = legend.append('svg')
-                .attr('width', 320)
-                .attr('height', 50);
-
-            svg.append('g')
-                .attr('class', 'axis')
-                .attr('transform', 'translate(10,30)')
-                .call(legendAxis);
-
-            var gradient = svg.append('defs')
-                .append('linearGradient')
-                .attr('id', 'gradient')
-                .attr('x1', '0%')
-                .attr('y1', '0%')
-                .attr('x2', '100%')
-                .attr('y2', '0%');
-
-            gradient.append('stop')
-                .attr('offset', '0%')
-                .attr('stop-color', colormap(min));
-
-            gradient.append('stop')
-                .attr('offset', '100%')
-                .attr('stop-color', colormap(max));
-
-            svg.append('rect')
-                .attr('width', 300)
-                .attr('height', 10)
-                .attr('x', 10)
-                .attr('y', 20)
-                .style('fill', 'url(#gradient)');
-        }
-
-        updateLegend(colormap_6, 25, 225);
-    </script>
-    <div class="legend"></div>
 </body>
 </html>
 """
