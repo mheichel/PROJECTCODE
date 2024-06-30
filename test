@@ -1,3 +1,14 @@
+# Add the initial layer to the map
+folium.GeoJson(geojson_6, name='6 Months', style_function=lambda feature: {
+    'fillColor': colormap_6(feature['properties']['avg_6_months']),
+    'color': 'black',
+    'weight': 0.5,
+    'fillOpacity': 0.7
+}).add_to(m)
+
+# Generate the Folium map as an HTML string
+map_html = m.get_root().render()
+
 # Manually include the Leaflet CSS and JavaScript directly in the HTML template
 leaflet_css = """
 <style>
