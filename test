@@ -10,10 +10,20 @@ leaflet_css = """
 """
 
 leaflet_js = """
+<script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
 var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
 
-var layer_6 = L.geoJson({geojson_6}, {
+var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
+    .domain([225, 25]);
+
+var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_60_json}))
+    .domain([225, 25]);
+
+var geojson_6 = {geojson_6};
+var geojson_60 = {geojson_60};
+
+var layer_6 = L.geoJson(geojson_6, {
     style: function(feature) {
         return {
             fillColor: colormap_6(feature.properties.avg_6_months),
@@ -27,7 +37,7 @@ var layer_6 = L.geoJson({geojson_6}, {
     }
 }).addTo(map);
 
-var layer_60 = L.geoJson({geojson_60}, {
+var layer_60 = L.geoJson(geojson_60, {
     style: function(feature) {
         return {
             fillColor: colormap_60(feature.properties.avg_60_months),
