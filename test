@@ -1,3 +1,14 @@
+# Create colormaps with fixed min and max values using a gradient
+colormap_6 = cm.linear.RdYlBu_11.scale(25, 225)
+colormap_6.caption = 'EUR Value (6 Months)'
+
+colormap_60 = cm.linear.RdYlBu_11.scale(25, 225)
+colormap_60.caption = 'EUR Value (60 Months)'
+
+# Create GeoJSON data for both datasets
+geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
+geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
+
 # Generate HTML
 html_template = f"""
 <!DOCTYPE html>
@@ -8,15 +19,15 @@ html_template = f"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
-        html, body {
+        html, body {{
             height: 100%;
             margin: 0;
-        }
-        #map {
+        }}
+        #map {{
             width: 100%;
             height: 100%;
-        }
-        #controls {
+        }}
+        #controls {{
             position: absolute;
             top: 10px;
             left: 50px;
@@ -25,8 +36,8 @@ html_template = f"""
             padding: 10px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }
-        .legend {
+        }}
+        .legend {{
             position: absolute;
             top: 10px;
             right: 50px;
@@ -35,7 +46,7 @@ html_template = f"""
             padding: 10px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }
+        }}
     </style>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://d3js.org/d3.v5.min.js"></script>
@@ -49,12 +60,12 @@ html_template = f"""
     </div>
     <div id="map"></div>
     <script>
-        var map = L.map('map').setView([{{ geo_data['latitude'].mean() }}, {{ geo_data['longitude'].mean() }}], 10);
+        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
             maxZoom: 18,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
+        }}).addTo(map);
 
         var colormap_6 = d3.scaleSequential(d3.interpolateRdYlBu)
             .domain([25, 225]);
@@ -62,52 +73,52 @@ html_template = f"""
         var colormap_60 = d3.scaleSequential(d3.interpolateRdYlBu)
             .domain([25, 225]);
 
-        function style_6(feature) {
-            return {
+        function style_6(feature) {{
+            return {{
                 fillColor: colormap_6(feature.properties.avg_6_months),
                 color: 'black',
                 weight: 0.5,
                 fillOpacity: 0.7
-            };
-        }
+            }};
+        }}
 
-        function style_60(feature) {
-            return {
+        function style_60(feature) {{
+            return {{
                 fillColor: colormap_60(feature.properties.avg_60_months),
                 color: 'black',
                 weight: 0.5,
                 fillOpacity: 0.7
-            };
-        }
+            }};
+        }}
 
-        var layer_6 = L.geoJson({{ geojson_6|safe }}, {
+        var layer_6 = L.geoJson({geojson_6}, {{
             style: style_6,
-            onEachFeature: function (feature, layer) {
+            onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
-            }
-        }).addTo(map);
+            }}
+        }}).addTo(map);
 
-        var layer_60 = L.geoJson({{ geojson_60|safe }}, {
+        var layer_60 = L.geoJson({geojson_60}, {{
             style: style_60,
-            onEachFeature: function (feature, layer) {
+            onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
-            }
-        });
+            }}
+        }});
 
-        function updateMap() {
+        function updateMap() {{
             var selectedLayer = document.getElementById('layer-select').value;
-            if (selectedLayer === 'avg_6_months') {
+            if (selectedLayer === 'avg_6_months') {{
                 map.removeLayer(layer_60);
                 map.addLayer(layer_6);
                 updateLegend(colormap_6, 25, 225);
-            } else {
+            }} else {{
                 map.removeLayer(layer_6);
                 map.addLayer(layer_60);
                 updateLegend(colormap_60, 25, 225);
-            }
-        }
+            }}
+        }}
 
-        function updateLegend(colormap, min, max) {
+        function updateLegend(colormap, min, max) {{
             var legend = d3.select('.legend');
             legend.html('<h4>EUR Value</h4>');
             var legendScale = d3.scaleLinear()
@@ -155,5 +166,10 @@ html_template = f"""
     <div class="legend"></div>
 </body>
 </html>
-
 """
+
+# Save the HTML template
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
+
+print("HTML file created successfully: dynamic_map.html")
