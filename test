@@ -1,117 +1,58 @@
-# Manually include the Leaflet CSS and JavaScript directly in the HTML template
-leaflet_css = """
-<style>
-.leaflet-container {{
-    position: relative;
-    height: 100%;
-    width: 100%;
-}}
-</style>
-"""
+import pandas as pd
+import folium
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import branca.colormap as cm
 
-leaflet_js = f"""
-<script src="https://d3js.org/d3.v5.min.js"></script>
-<script>
-var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
+# Load the wells_df
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=['API 14', 'Surface Longitude', 'Surface Latitude', 'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 60 Months'])
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 6 Months'] > 0.1]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 6 Months'] < np.nanpercentile(wells_df['EUR/PLL (BBL/FT) 6 Months'], 95)]
+wells_df = wells_df[wells_df['EUR/PLL (BBL/FT) 60 Months'] < np.nanpercentile(wells_df['EUR/PLL (BBL/FT) 60 Months'], 95)]
+wells_df = wells_df.reset_index()
 
-var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
-    .domain([225, 25]);
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
 
-var colormap_60 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_60_json}))
-    .domain([225, 25]);
+# Set the CRS to WGS84 (EPSG:4326)
+geo_data.set_crs(epsg=4326, inplace=True)
 
-var geojson_6 = {geojson_6};
-var geojson_60 = {geojson_60};
+# Load the township boundaries shapefile
+shape_data = gpd.read_file('PLSSFirstDivision.geojson')  # Replace with your shapefile path
 
-var layer_6 = L.geoJson(geojson_6, {{
-    style: function(feature) {{
-        return {{
-            fillColor: colormap_6(feature.properties.avg_6_months),
-            color: 'black',
-            weight: 0.5,
-            fillOpacity: 0.7
-        }};
-    }},
-    onEachFeature: function(feature, layer) {{
-        layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
-    }}
-}}).addTo(map);
+# Ensure the CRS for the township boundaries is set to WGS84
+shape_data.to_crs(epsg=4326, inplace=True)
 
-var layer_60 = L.geoJson(geojson_60, {{
-    style: function(feature) {{
-        return {{
-            fillColor: colormap_60(feature.properties.avg_60_months),
-            color: 'black',
-            weight: 0.5,
-            fillOpacity: 0.7
-        }};
-    }},
-    onEachFeature: function(feature, layer) {{
-        layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
-    }}
-}});
+# Spatial join to assign points to township polygons
+joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
 
-function updateMap() {{
-    var selectedLayer = document.getElementById('layer-select').value;
-    if (selectedLayer === 'avg_6_months') {{
-        map.removeLayer(layer_60);
-        map.addLayer(layer_6);
-        updateLegend(colormap_6, 25, 225);
-    }} else {{
-        map.removeLayer(layer_6);
-        map.addLayer(layer_60);
-        updateLegend(colormap_60, 25, 225);
-    }}
-}}
+# Calculate average values for each township polygon
+shape_data['avg_6_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 6 Months'].mean()
+shape_data['avg_60_months'] = joined.groupby('index_right')['EUR/PLL (BBL/FT) 60 Months'].mean()
 
-function updateLegend(colormap, min, max) {{
-    var legend = d3.select('.legend');
-    legend.html('<h4>EUR Value</h4>');
-    var legendScale = d3.scaleLinear()
-        .domain([min, max])
-        .range([0, 300]);
-    var legendAxis = d3.axisBottom(legendScale)
-        .ticks(5)
-        .tickFormat(d3.format(".2f"));
+# Drop sections where the average value is 0
+shape_data = shape_data[(shape_data['avg_6_months'] > 0) | (shape_data['avg_60_months'] > 0)]
 
-    var svg = legend.append('svg')
-        .attr('width', 320)
-        .attr('height', 50);
+# Create colormaps
+colormap_6 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                               vmin=shape_data['avg_6_months'].min(),
+                               vmax=shape_data['avg_6_months'].max(),
+                               caption='EUR Value (6 Months)')
 
-    svg.append('g')
-        .attr('class', 'axis')
-        .attr('transform', 'translate(10,30)')
-        .call(legendAxis);
+colormap_60 = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                vmin=shape_data['avg_60_months'].min(),
+                                vmax=shape_data['avg_60_months'].max(),
+                                caption='EUR Value (60 Months)')
 
-    var gradient = svg.append('defs')
-        .append('linearGradient')
-        .attr('id', 'gradient')
-        .attr('x1', '0%')
-        .attr('y1', '0%')
-        .attr('x2', '100%')
-        .attr('y2', '0%');
+# Create GeoJSON data for both datasets
+geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
+geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
 
-    gradient.append('stop')
-        .attr('offset', '0%')
-        .attr('stop-color', colormap(min));
-
-    gradient.append('stop')
-        .attr('offset', '100%')
-        .attr('stop-color', colormap(max));
-
-    svg.append('rect')
-        .attr('width', 300)
-        .attr('height', 10)
-        .attr('x', 10)
-        .attr('y', 20)
-        .style('fill', 'url(#gradient)');
-}
-
-updateLegend(colormap_6, 25, 225);
-</script>
-"""
-
-# Generate HTML template
+# Generate HTML
 html_template = f"""
 <!DOCTYPE html>
 <html>
@@ -119,7 +60,7 @@ html_template = f"""
     <title>Dynamic Map</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    {leaflet_css}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
         html, body {{
             height: 100%;
@@ -150,6 +91,8 @@ html_template = f"""
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
     </style>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
     <div id="controls">
@@ -159,7 +102,119 @@ html_template = f"""
         </select>
     </div>
     <div id="map"></div>
-    {leaflet_js}
+    <div class="legend" id="legend"></div>
+    <script>
+        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
+
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }}).addTo(map);
+
+        var colormap_6 = d3.scaleLinear()
+            .domain([{shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
+
+        var colormap_60 = d3.scaleLinear()
+            .domain([{shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()}])
+            .range(["blue", "green", "yellow", "orange", "red"]);
+
+        function style_6(feature) {{
+            return {{
+                fillColor: colormap_6(feature.properties.avg_6_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
+        function style_60(feature) {{
+            return {{
+                fillColor: colormap_60(feature.properties.avg_60_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
+        var layer_6 = L.geoJson({geojson_6}, {{
+            style: style_6,
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
+            }}
+        }}).addTo(map);
+
+        var layer_60 = L.geoJson({geojson_60}, {{
+            style: style_60,
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
+            }}
+        }});
+
+        function updateMap() {{
+            var selectedLayer = document.getElementById('layer-select').value;
+            if (selectedLayer === 'avg_6_months') {{
+                map.removeLayer(layer_60);
+                map.addLayer(layer_6);
+                updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+            }} else {{
+                map.removeLayer(layer_6);
+                map.addLayer(layer_60);
+                updateLegend(colormap_60, {shape_data['avg_60_months'].min()}, {shape_data['avg_60_months'].max()});
+            }}
+        }}
+
+        function updateLegend(colormap, min, max) {{
+            var legend = d3.select('#legend');
+            legend.html('<h4>EUR Value</h4>');
+            var legendScale = d3.scaleLinear()
+                .domain([min, max])
+                .range([0, 300]);
+            var legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickFormat(d3.format(".2f"));
+
+            var svg = legend.append('svg')
+                .attr('width', 320)
+                .attr('height', 50);
+
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', 'translate(10,30)')
+                .call(legendAxis);
+
+            var gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'gradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '0%');
+
+            gradient.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', colormap(min));
+
+            gradient.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', colormap(max));
+
+            svg.append('rect')
+                .attr('width', 300)
+                .attr('height', 10)
+                .attr('x', 10)
+                .attr('y', 20)
+                .style('fill', 'url(#gradient)');
+        }
+
+        updateLegend(colormap_6, {shape_data['avg_6_months'].min()}, {shape_data['avg_6_months'].max()});
+    </script>
 </body>
 </html>
 """
+
+# Save the HTML template
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
+
+print("HTML file created successfully: dynamic_map.html")
