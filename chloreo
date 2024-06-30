@@ -93,15 +93,24 @@ html_template = f"""
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        html, body {{
+            height: 100%;
+            margin: 0;
+        }}
+        #map {{
+            width: 100%;
+            height: 100%;
+        }}
+    </style>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
     <select id="layer-select" onchange="updateMap()">
         <option value="avg_6_months">6 Months</option>
         <option value="avg_60_months">60 Months</option>
     </select>
-    <div id="map" style="width: 100%; height: 600px;"></div>
+    <div id="map"></div>
     <script>
         var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
 
@@ -110,29 +119,36 @@ html_template = f"""
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }}).addTo(map);
 
+        var colormap_6 = L.linearColors({{colors: ['blue', 'green', 'yellow', 'orange', 'red'], min: {shape_data['avg_6_months'].min()}, max: {shape_data['avg_6_months'].max()}}});
+        var colormap_60 = L.linearColors({{colors: ['blue', 'green', 'yellow', 'orange', 'red'], min: {shape_data['avg_60_months'].min()}, max: {shape_data['avg_60_months'].max()}}});
+
+        function style_6(feature) {{
+            return {{
+                fillColor: colormap_6(feature.properties.avg_6_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
+        function style_60(feature) {{
+            return {{
+                fillColor: colormap_60(feature.properties.avg_60_months),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+
         var layer_6 = L.geoJson({shape_data[['geometry', 'avg_6_months']].to_json()}, {{
-            style: function (feature) {{
-                return {{
-                    fillColor: '{colormap_6(0.5)}',
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }},
+            style: style_6,
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (6 Months): ' + feature.properties.avg_6_months.toFixed(2));
             }}
         }}).addTo(map);
 
         var layer_60 = L.geoJson({shape_data[['geometry', 'avg_60_months']].to_json()}, {{
-            style: function (feature) {{
-                return {{
-                    fillColor: '{colormap_60(0.5)}',
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }},
+            style: style_60,
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR (60 Months): ' + feature.properties.avg_60_months.toFixed(2));
             }}
