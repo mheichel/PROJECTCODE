@@ -1,37 +1,4 @@
-# Create colormaps with fixed min and max values using a gradient and reverse the gradient
-colormap_6 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (6 Months)').reversed()
-colormap_60 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (60 Months)').reversed()
-
-# Create GeoJSON data for both datasets
-geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
-geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
-
-# Serialize colormap to JSON format
-colormap_6_json = json.dumps(list(colormap_6.colors))
-colormap_60_json = json.dumps(list(colormap_60.colors))
-
-# Create base map with Folium
-m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
-folium.GeoJson(geojson_6, name='6 Months', style_function=lambda feature: {
-    'fillColor': colormap_6(feature['properties']['avg_6_months']),
-    'color': 'black',
-    'weight': 0.5,
-    'fillOpacity': 0.7
-}).add_to(m)
-
-# Save the map to an HTML file
-m.save('base_map.html')
-
-# Read the generated HTML content of the base map
-with open('base_map.html', 'r') as file:
-    base_map_html = file.read()
-
-# Extract the necessary parts of the base_map_html to embed into the final HTML
-start_marker = '<div style="width:100%;height:100%" id="map">'
-end_marker = '</div>'
-base_map_content = base_map_html.split(start_marker)[1].split(end_marker)[0]
-
-# Generate HTML
+# Generate HTML template
 html_template = f"""
 <!DOCTYPE html>
 <html>
@@ -80,7 +47,7 @@ html_template = f"""
             <option value="avg_60_months">60 Months</option>
         </select>
     </div>
-    <div id="map">{base_map_content}</div>
+    <div id="map">{map_html}</div>
     <script>
         var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
@@ -178,9 +145,3 @@ html_template = f"""
 </body>
 </html>
 """
-
-# Save the HTML template
-with open('dynamic_map.html', 'w') as f:
-    f.write(html_template)
-
-print("HTML file created successfully: dynamic_map.html")
