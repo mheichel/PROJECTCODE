@@ -158,7 +158,7 @@ html_template = f"""
             <option value="avg_60_months">60 Months</option>
         </select>
     </div>
-    <div id="map">{map_html}</div>
+    <div id="map"></div>
     {leaflet_js}
 </body>
 </html>
