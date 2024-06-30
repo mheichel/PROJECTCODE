@@ -1,21 +1,3 @@
-# Create colormaps with fixed min and max values using a gradient and reverse the gradient
-colormap_6 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (6 Months)').reversed()
-colormap_60 = cm.LinearColormap(['blue', 'green', 'yellow', 'orange', 'red'], vmin=25, vmax=225, caption='EUR Value (60 Months)').reversed()
-
-# Create GeoJSON data for both datasets
-geojson_6 = shape_data[['geometry', 'avg_6_months']].to_json()
-geojson_60 = shape_data[['geometry', 'avg_60_months']].to_json()
-
-# Serialize colormap to JSON format
-colormap_6_json = json.dumps(list(colormap_6.colors))
-colormap_60_json = json.dumps(list(colormap_60.colors))
-
-# Create base map with Folium
-m = folium.Map(location=[geo_data['latitude'].mean(), geo_data['longitude'].mean()], zoom_start=10)
-
-# Generate the Folium map as an HTML string
-map_html = m.get_root().render()
-
 # Generate HTML template
 html_template = f"""
 <!DOCTYPE html>
@@ -67,6 +49,13 @@ html_template = f"""
     </div>
     <div id="map">{map_html}</div>
     <script>
+        var map = L.map('map').setView([{geo_data['latitude'].mean()}, {geo_data['longitude'].mean()}], 10);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }}).addTo(map);
+
         var colormap_6 = d3.scaleSequential(d3.interpolateRgbBasis({colormap_6_json}))
             .domain([225, 25]);
 
