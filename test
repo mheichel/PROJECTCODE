@@ -2,10 +2,6 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
-import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output
-import dash_leaflet as dl
 import json
 
 # Load the wells_df
@@ -175,70 +171,4 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
 
     print("HTML file created successfully: dynamic_map.html")
 
-# Generate the HTML template before running the Dash app
 generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2)
-
-# Dash app setup
-app = dash.Dash(__name__)
-
-app.layout = html.Div([
-    html.H1("Well Data Map"),
-    dcc.Dropdown(
-        id='intervals-dropdown',
-        options=[{'label': interval, 'value': interval} for interval in wells_df['MyIntervalPlus'].unique()],
-        multi=True,
-        placeholder="Select Intervals"
-    ),
-    dcc.Dropdown(
-        id='pllintervals-dropdown',
-        options=[{'label': interval, 'value': interval} for interval in wells_df['MyPerfInterval'].unique()],
-        multi=True,
-        placeholder="Select PLL Intervals"
-    ),
-    dcc.Dropdown(
-        id='vintages-dropdown',
-        options=[{'label': vintage, 'value': vintage} for vintage in wells_df['FirstProdYear'].unique()],
-        multi=True,
-        placeholder="Select Vintages"
-    ),
-    dcc.Dropdown(
-        id='shapefile-dropdown',
-        options=[
-            {'label': 'First Shapefile', 'value': 'geojson1'},
-            {'label': 'Second Shapefile', 'value': 'geojson2'}
-        ],
-        value='geojson1',
-        placeholder="Select Shapefile"
-    ),
-    dl.Map(center=[mean_latitude, mean_longitude], zoom=10, children=[
-        dl.TileLayer(),
-        dl.GeoJSON(id='geojson')
-    ], style={'width': '100%', 'height': '80vh', 'margin': "auto", "display": "block"})
-])
-
-@app.callback(
-    Output('geojson', 'data'),
-    [Input('shapefile-dropdown', 'value'),
-     Input('intervals-dropdown', 'value'),
-     Input('pllintervals-dropdown', 'value'),
-     Input('vintages-dropdown', 'value')]
-)
-def update_map(selected_shapefile, selected_intervals, selected_pllintervals, selected_vintages):
-    if selected_shapefile == 'geojson1':
-        geojson_data = geojson1
-    else:
-        geojson_data = geojson2
-
-    filtered_features = []
-    for feature in geojson_data['features']:
-        properties = feature['properties']
-        if (selected_intervals is None or properties['MyIntervalPlus'] in selected_intervals) and \
-           (selected_pllintervals is None or properties['MyPerfInterval'] in selected_pllintervals) and \
-           (selected_vintages is None or properties['FirstProdYear'] in selected_vintages):
-            filtered_features.append(feature)
-
-    filtered_geojson = {'type': 'FeatureCollection', 'features': filtered_features}
-    return filtered_geojson
-
-if __name__ == '__main__':
-    app.run_server(debug=True)
