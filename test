@@ -1,14 +1,5 @@
-# Initialize layers in the script
-html_template += """
-        var currentLayer;
-"""
-
-# Add initialization for each layer
+# Add options to the dropdown menu
 for col in columns[3:]:
     avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    html_template += f"""
-        if (!currentLayer) {{
-            currentLayer = layer_{avg_col_name};
-            currentLayer.addTo(map);
-        }}
-    """
+    month_label = col.split()[3]
+    html_template += f'<option value="{avg_col_name}">{month_label}</option>\n'
