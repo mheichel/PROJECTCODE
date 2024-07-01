@@ -1,5 +1,162 @@
+# Generate HTML
+html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        html, body {{
+            height: 100%;
+            margin: 0;
+        }}
+        #map {{
+            width: 100%;
+            height: 100%;
+        }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+        .legend {{
+            position: absolute;
+            top: 10px;
+            right: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+    </style>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <select id="layer-select" onchange="updateMap()">
+"""
+
 # Add options to the dropdown menu
 for col in columns[3:]:
     avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
     month_label = col.split()[3]
     html_template += f'<option value="{avg_col_name}">{month_label}</option>\n'
+
+html_template += f"""
+        </select>
+    </div>
+    <div id="map"></div>
+    <div class="legend" id="legend"></div>
+    <script>
+        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+
+        L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }}).addTo(map);
+
+        var colormaps = {{}};
+"""
+
+# Add colormaps to the HTML
+for col in columns[3:]:
+    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
+    html_template += f"""
+        colormaps['{avg_col_name}'] = d3.scaleThreshold()
+            .domain([30,60,90,120,150,180])
+            .range(["white","blue", "green", "yellow", "orange", "red"]);
+    """
+
+# Add styles to the HTML
+for col in columns[3:]:
+    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
+    html_template += f"""
+        function style_{avg_col_name}(feature) {{
+            return {{
+                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+    """
+
+# Add layers to the HTML
+for col in columns[3:]:
+    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
+    html_template += f"""
+        var layer_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
+            style: style_{avg_col_name},
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('EUR ({col.split()[3]}): ' + feature.properties.{avg_col_name}.toFixed(2));
+            }}
+        }});
+    """
+
+html_template += """
+        var currentLayer = layer_avg_6_months;
+        currentLayer.addTo(map);
+
+        function updateMap() {
+            var selectedLayer = document.getElementById('layer-select').value;
+            map.removeLayer(currentLayer);
+            currentLayer = window['layer_' + selectedLayer];
+            currentLayer.addTo(map);
+            updateLegend(colormaps[selectedLayer], [0,30,60,90,120,150]);
+        }
+
+        function updateLegend(colormap, domain) {
+            var legend = d3.select('#legend');
+            legend.html('<h4>EUR Value</h4>');
+            var legendScale = d3.scaleLinear()
+                .domain([domain[0], domain[domain.length - 1]])
+                .range([0, 300]);
+            var legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickFormat(d3.format(".2f"));
+
+            var svg = legend.append('svg')
+                .attr('width', 320)
+                .attr('height', 50);
+
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', 'translate(10,30)')
+                .call(legendAxis);
+
+            var gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'gradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '0%');
+
+            domain.forEach(function(d, i) {
+                gradient.append('stop')
+                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
+                    .attr('stop-color', colormap(d));
+            });
+
+            svg.append('rect')
+                .attr('width', 300)
+                .attr('height', 10)
+                .attr('x', 10)
+                .attr('y', 20)
+                .style('fill', 'url(#gradient)');
+        }
+
+        updateLegend(colormaps['avg_6_months'], [0,30,60,90,120,150]);
+    </script>
+</body>
+</html>
+"""
