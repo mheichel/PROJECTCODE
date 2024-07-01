@@ -15,12 +15,13 @@ html_template += """
 """
 
 for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[2].replace("(", "").replace(")", "").lower()}'
+    months = col.split()[2]  # Extract the number of months
+    avg_col_name = f'avg_{months.lower()}_months'
     html_template += f"""
         var layer_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
             style: style_{avg_col_name},
             onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({col.split()[2]}): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
             }}
         }});
         window['layer_{avg_col_name}'] = layer_{avg_col_name};
