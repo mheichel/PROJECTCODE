@@ -6,7 +6,6 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
 import dash_leaflet as dl
-import dash_leaflet.express as dlx
 import json
 
 # Load the wells_df
@@ -146,9 +145,6 @@ def update_map(selected_shapefile, selected_intervals, selected_pllintervals, se
     filtered_geojson = {'type': 'FeatureCollection', 'features': filtered_features}
     return filtered_geojson
 
-if __name__ == '__main__':
-    app.run_server(debug=True)
-
 # Generate the HTML template
 def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
     html_template = f"""
@@ -242,3 +238,6 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
     print("HTML file created successfully: dynamic_map.html")
 
 generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2)
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
