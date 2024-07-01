@@ -110,13 +110,15 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
             }}
             .legend {{
                 position: absolute;
-                top: 10px;
-                right: 50px;
+                bottom: 30px;
+                left: 50px;
                 z-index: 1000;
                 background: white;
                 padding: 10px;
                 border-radius: 5px;
                 box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+                line-height: 18px;
+                color: #555;
             }}
         </style>
         <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
@@ -183,18 +185,16 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
             }}
 
             function updateLegend() {{
-                var legend = d3.select('#legend');
-                legend.html('<h4>EUR/PLL (BBL/FT)</h4>');
+                var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
                 var grades = [0, 5, 10, 20, 50, 100, 150];
+                var labels = [];
                 for (var i = 0; i < grades.length; i++) {{
-                    legend.append('i')
-                        .style('background', getColor(grades[i] + 1))
-                        .style('width', '20px')
-                        .style('height', '20px')
-                        .style('display', 'inline-block');
-                    legend.append('span')
-                        .text(grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+'));
+                    labels.push(
+                        '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
+                        grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
+                    );
                 }}
+                legend.html(labels.join('<br>'));
             }}
 
             updateLegend();
