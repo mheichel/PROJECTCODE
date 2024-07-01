@@ -2,11 +2,12 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
-import branca.colormap as cm
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
-import plotly.express as px
+import dash_leaflet as dl
+import dash_leaflet.express as dlx
+import json
 
 # Load the wells_df
 columns = [
@@ -59,24 +60,8 @@ for col in columns[3:13]:
 # Drop sections where all the average values are 0
 shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
 
-# Create colormaps for each time period
-colormaps = {}
-
-for col in avg_col_names:
-    months = col[4]
-    avg_col_name = col
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                vmin=shape_data[avg_col_name].min(),
-                                                vmax=150,
-                                                caption=f'EUR Value ({col})')
-
-# Create GeoJSON data for each dataset
-geojson_data = {}
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
+# Create GeoJSON data for the first dataset
+geojson1 = json.loads(shape_data.to_json())
 
 # Load the second shapefile
 shape_data2 = gpd.read_file('PLSSTownship.geojson')  # Replace with your second shapefile path
@@ -96,24 +81,14 @@ for col in columns[3:13]:
 # Drop sections where all the average values are 0 for the second shapefile
 shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
 
-# Create colormaps and GeoJSON data for the second shapefile
-colormaps2 = {}
-geojson_data2 = {}
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    colormaps2[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                 vmin=shape_data2[avg_col_name].min(),
-                                                 vmax=150,
-                                                 caption=f'EUR Value ({months})')
-    geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
+# Create GeoJSON data for the second dataset
+geojson2 = json.loads(shape_data2.to_json())
 
 # Dash app setup
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
-    html.H1("Well Data Heatmap"),
+    html.H1("Well Data Map"),
     dcc.Dropdown(
         id='intervals-dropdown',
         options=[{'label': interval, 'value': interval} for interval in wells_df['MyIntervalPlus'].unique()],
@@ -132,36 +107,50 @@ app.layout = html.Div([
         multi=True,
         placeholder="Select Vintages"
     ),
-    dcc.Graph(id='heatmap')
+    dcc.Dropdown(
+        id='shapefile-dropdown',
+        options=[
+            {'label': 'First Shapefile', 'value': 'geojson1'},
+            {'label': 'Second Shapefile', 'value': 'geojson2'}
+        ],
+        value='geojson1',
+        placeholder="Select Shapefile"
+    ),
+    dl.Map(center=[mean_latitude, mean_longitude], zoom=10, children=[
+        dl.TileLayer(),
+        dl.GeoJSON(id='geojson')
+    ], style={'width': '100%', 'height': '80vh', 'margin': "auto", "display": "block"})
 ])
 
 @app.callback(
-    Output('heatmap', 'figure'),
-    [Input('intervals-dropdown', 'value'),
+    Output('geojson', 'data'),
+    [Input('shapefile-dropdown', 'value'),
+     Input('intervals-dropdown', 'value'),
      Input('pllintervals-dropdown', 'value'),
      Input('vintages-dropdown', 'value')]
 )
-def update_heatmap(selected_intervals, selected_pllintervals, selected_vintages):
-    filtered_df = wells_df.copy()
+def update_map(selected_shapefile, selected_intervals, selected_pllintervals, selected_vintages):
+    if selected_shapefile == 'geojson1':
+        geojson_data = geojson1
+    else:
+        geojson_data = geojson2
 
-    if selected_intervals:
-        filtered_df = filtered_df[filtered_df['MyIntervalPlus'].isin(selected_intervals)]
-    if selected_pllintervals:
-        filtered_df = filtered_df[filtered_df['MyPerfInterval'].isin(selected_pllintervals)]
-    if selected_vintages:
-        filtered_df = filtered_df[filtered_df['FirstProdYear'].isin(selected_vintages)]
-    
-    heatmap_data = filtered_df.groupby(['MyIntervalPlus', 'MyPerfInterval', 'FirstProdYear']).size().reset_index(name='Counts')
-    
-    fig = px.density_heatmap(
-        heatmap_data,
-        x='MyIntervalPlus',
-        y='FirstProdYear',
-        z='Counts',
-        color_continuous_scale='Viridis'
-    )
+    filtered_features = []
+    for feature in geojson_data['features']:
+        properties = feature['properties']
+        if (selected_intervals is None or properties['MyIntervalPlus'] in selected_intervals) and \
+           (selected_pllintervals is None or properties['MyPerfInterval'] in selected_pllintervals) and \
+           (selected_vintages is None or properties['FirstProdYear'] in selected_vintages):
+            filtered_features.append(feature)
 
-    # Generate the HTML template
+    filtered_geojson = {'type': 'FeatureCollection', 'features': filtered_features}
+    return filtered_geojson
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+# Generate the HTML template
+def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
     html_template = f"""
     <!DOCTYPE html>
     <html>
@@ -189,33 +178,27 @@ def update_heatmap(selected_intervals, selected_pllintervals, selected_vintages)
                 border-radius: 5px;
                 box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
             }}
-            .legend {{
-                position: absolute;
-                top: 10px;
-                right: 50px;
-                z-index: 1000;
-                background: white;
-                padding: 10px;
-                border-radius: 5px;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            }}
         </style>
         <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
         <script src="https://d3js.org/d3.v5.min.js"></script>
     </head>
     <body>
         <div id="controls">
-            <select id="layer-select" onchange="updateMap()">
-                <optgroup label="Sections">
-                    {''.join([f'<option value="1_{col}">{col}</option>' for col in avg_col_names])}
-                </optgroup>
-                <optgroup label="Townships">
-                    {''.join([f'<option value="2_{col}">{col}</option>' for col in avg_col_names])}
-                </optgroup>
+            <select id="shapefile-select" onchange="updateMap()">
+                <option value="geojson1">First Shapefile</option>
+                <option value="geojson2">Second Shapefile</option>
+            </select>
+            <select id="intervals-select" multiple onchange="updateMap()">
+                {''.join([f'<option value="{interval}">{interval}</option>' for interval in wells_df['MyIntervalPlus'].unique()])}
+            </select>
+            <select id="pllintervals-select" multiple onchange="updateMap()">
+                {''.join([f'<option value="{interval}">{interval}</option>' for interval in wells_df['MyPerfInterval'].unique()])}
+            </select>
+            <select id="vintages-select" multiple onchange="updateMap()">
+                {''.join([f'<option value="{vintage}">{vintage}</option>' for vintage in wells_df['FirstProdYear'].unique()])}
             </select>
         </div>
         <div id="map"></div>
-        <div class="legend" id="legend"></div>
         <script>
             var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
@@ -224,126 +207,38 @@ def update_heatmap(selected_intervals, selected_pllintervals, selected_vintages)
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }}).addTo(map);
 
-            var colormaps = {{}};
-            var colormaps2 = {{}};
+            var geojson1 = {json.dumps(geojson1)};
+            var geojson2 = {json.dumps(geojson2)};
 
-            {''.join([f"colormaps['{col}'] = d3.scaleThreshold().domain([30,60,90,120,150,180]).range(['white','blue', 'green', 'yellow', 'orange', 'red']);" for col in avg_col_names])}
-            {''.join([f"colormaps2['{col}'] = d3.scaleThreshold().domain([30,60,90,120,150,180]).range(['white','blue', 'green', 'yellow', 'orange', 'red']);" for col in avg_col_names])}
-
-            {''.join([f"""
-            function style_{col}(feature) {{
-                return {{
-                    fillColor: colormaps['{col}'](feature.properties.{col}),
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }}
-            """ for col in avg_col_names])}
-
-            {''.join([f"""
-            function style2_{col}(feature) {{
-                return {{
-                    fillColor: colormaps2['{col}'](feature.properties.{col}),
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }}
-            """ for col in avg_col_names])}
-
-            {''.join([f"""
-            var layer_1_{col} = L.geoJson({geojson_data[col]}, {{
-                style: style_{col},
-                onEachFeature: function (feature, layer) {{
-                    layer.bindPopup('EUR ({col.split('_')[1]} Months): ' + feature.properties.{col}.toFixed(2));
-                }}
-            }});
-            window['layer_1_{col}'] = layer_1_{col};
-            """ for col in avg_col_names])}
-
-            {''.join([f"""
-            var layer_2_{col} = L.geoJson({geojson_data2[col]}, {{
-                style: style2_{col},
-                onEachFeature: function (feature, layer) {{
-                    layer.bindPopup('EUR ({col.split('_')[1]} Months): ' + feature.properties.{col}.toFixed(2));
-                }}
-            }});
-            window['layer_2_{col}'] = layer_2_{col};
-            """ for col in avg_col_names])}
-
-            var currentLayer = window['layer_1_avg_6_months'];
-            currentLayer.addTo(map);
+            var currentLayer = L.geoJSON(geojson1).addTo(map);
 
             function updateMap() {{
-                var selectedLayer = document.getElementById('layer-select').value;
+                var selectedShapefile = document.getElementById('shapefile-select').value;
+                var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
+                var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
+                var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
+
+                var geojsonData = selectedShapefile === 'geojson1' ? geojson1 : geojson2;
+                var filteredFeatures = geojsonData.features.filter(feature => {{
+                    var properties = feature.properties;
+                    return (selectedIntervals.length === 0 || selectedIntervals.includes(properties.MyIntervalPlus)) &&
+                           (selectedPLLIntervals.length === 0 || selectedPLLIntervals.includes(properties.MyPerfInterval)) &&
+                           (selectedVintages.length === 0 || selectedVintages.includes(properties.FirstProdYear));
+                }});
+
                 if (currentLayer) {{
                     map.removeLayer(currentLayer);
                 }}
-                currentLayer = window['layer_' + selectedLayer];
-                if (currentLayer) {{
-                    currentLayer.addTo(map);
-                    var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                    updateLegend(colormaps[selectedLayer], [0,30,60,90,120,150]);
-                }} else {{
-                    console.error('Layer not found:', selectedLayer);
-                }}
+                currentLayer = L.geoJSON({{'type': 'FeatureCollection', 'features': filteredFeatures}}).addTo(map);
             }}
-
-            function updateLegend(colormap, domain) {{
-                var legend = d3.select('#legend');
-                legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
-                var legendScale = d3.scaleLinear()
-                    .domain([domain[0], domain[domain.length - 1]])
-                    .range([0, 300]);
-                var legendAxis = d3.axisBottom(legendScale)
-                    .ticks(5)
-                    .tickFormat(d3.format(".2f"));
-
-                var svg = legend.append('svg')
-                    .attr('width', 320)
-                    .attr('height', 50);
-
-                svg.append('g')
-                    .attr('class', 'axis')
-                    .attr('transform', 'translate(10,30)')
-                    .call(legendAxis);
-
-                var gradient = svg.append('defs')
-                    .append('linearGradient')
-                    .attr('id', 'gradient')
-                    .attr('x1', '0%')
-                    .attr('y1', '0%')
-                    .attr('x2', '100%')
-                    .attr('y2', '0%');
-
-                domain.forEach(function(d, i) {{
-                    gradient.append('stop')
-                        .attr('offset', (i / (domain.length - 1) * 100) + '%')
-                        .attr('stop-color', colormap(d));
-                }});
-
-                svg.append('rect')
-                    .attr('width', 300)
-                    .attr('height', 10)
-                    .attr('x', 10)
-                    .attr('y', 20)
-                    .style('fill', 'url(#gradient)');
-            }}
-
-            updateLegend(colormaps['avg_6_months'], [0,30,60,90,120,150]);
         </script>
     </body>
     </html>
     """
 
-    # Save the HTML template
     with open('dynamic_map.html', 'w') as f:
         f.write(html_template)
 
     print("HTML file created successfully: dynamic_map.html")
 
-    return fig
-
-if __name__ == '__main__':
-    app.run_server(debug=True)
+generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2)
