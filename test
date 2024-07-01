@@ -1,164 +1,14 @@
-import pandas as pd
-import geopandas as gpd
-import numpy as np
-from shapely.geometry import Point
-import branca.colormap as cm
-
-# Load the wells_df
-columns = [
-    'API 14', 'Surface Longitude', 'Surface Latitude',
-    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months', 
-    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months', 
-    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months', 
-    'EUR/PLL (BBL/FT) 60 Months'
-]
-wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
-wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-wells_df = wells_df[wells_df['latitude'] > 0.1]
-
-for col in columns[3:]:
-    wells_df = wells_df[wells_df[col] > 0.1]
-    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
-
-wells_df = wells_df.reset_index()
-
-# Calculate mean latitude and longitude
-mean_latitude = wells_df['latitude'].mean()
-mean_longitude = wells_df['longitude'].mean()
-
-# Convert well data to GeoDataFrame
-geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
-geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
-
-# Set the CRS to WGS84 (EPSG:4326)
-geo_data.set_crs(epsg=4326, inplace=True)
-
-# Load the township boundaries shapefile
-shape_data = gpd.read_file('PLSSFirstDivision.geojson')  # Replace with your shapefile path
-
-# Ensure the CRS for the township boundaries is set to WGS84
-shape_data.to_crs(epsg=4326, inplace=True)
-
-# Spatial join to assign points to township polygons
-joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
-
-# Calculate average values for each township polygon
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
-
-# Drop sections where all the average values are 0
-non_zero_cols = [f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}' for col in columns[3:]]
-shape_data = shape_data[(shape_data[non_zero_cols] > 0).any(axis=1)]
-
-# Create colormaps for each time period
-colormaps = {}
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                vmin=shape_data[avg_col_name].min(),
-                                                vmax=150,
-                                                caption=f'EUR Value ({col.split()[3]})')
-
-# Create GeoJSON data for each dataset
-geojson_data = {}
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
-
-# Generate HTML
-html_template = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dynamic Map</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <style>
-        html, body {{
-            height: 100%;
-            margin: 0;
-        }}
-        #map {{
-            width: 100%;
-            height: 100%;
-        }}
-        #controls {{
-            position: absolute;
-            top: 10px;
-            left: 50px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .legend {{
-            position: absolute;
-            top: 10px;
-            right: 50px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-    </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://d3js.org/d3.v5.min.js"></script>
-</head>
-<body>
-    <div id="controls">
-        <select id="layer-select" onchange="updateMap()">
-"""
-
-# Add options to the dropdown menu
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    month_label = col.split()[2]
-    html_template += f'<option value="{avg_col_name}">{month_label}</option>\n'
-
-html_template += f"""
-        </select>
-    </div>
-    <div id="map"></div>
-    <div class="legend" id="legend"></div>
-    <script>
-        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
-
-        L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
-            maxZoom: 18,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }}).addTo(map);
-
-        var colormaps = {{}};
-"""
-
-# Add colormaps to the HTML
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    html_template += f"""
-        colormaps['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([30,60,90,120,150,180])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
-
-# Add styles to the HTML
-for col in columns[3:]:
-    avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    html_template += f"""
-        function style_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
-
 # Add layers to the HTML
+html_template += """
+        var currentLayer;
+
+        function addInitialLayer() {
+            currentLayer = layer_avg_6_months;
+            currentLayer.addTo(map);
+        }
+
+"""
+
 for col in columns[3:]:
     avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
     html_template += f"""
@@ -171,14 +21,13 @@ for col in columns[3:]:
     """
 
 html_template += """
-        var currentLayer = layer_avg_6_months;
-        currentLayer.addTo(map);
+        addInitialLayer();
 
         function updateMap() {
             var selectedLayer = document.getElementById('layer-select').value;
-            if (currentLayer) {{
+            if (currentLayer) {
                 map.removeLayer(currentLayer);
-            }}
+            }
             currentLayer = window['layer_' + selectedLayer];
             currentLayer.addTo(map);
             updateLegend(colormaps[selectedLayer], [0,30,60,90,120,150]);
