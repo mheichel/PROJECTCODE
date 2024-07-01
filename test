@@ -1,3 +1,47 @@
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import branca.colormap as cm
+
+# Load the wells_df
+columns = [
+    'API 14', 'Surface Longitude', 'Surface Latitude',
+    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months', 
+    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months', 
+    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months', 
+    'EUR/PLL (BBL/FT) 60 Months'
+]
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
+
+for col in columns[3:]:
+    wells_df = wells_df[wells_df[col] > 0.1]
+    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
+
+wells_df = wells_df.reset_index()
+
+# Calculate mean latitude and longitude
+mean_latitude = wells_df['latitude'].mean()
+mean_longitude = wells_df['longitude'].mean()
+
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
+
+# Set the CRS to WGS84 (EPSG:4326)
+geo_data.set_crs(epsg=4326, inplace=True)
+
+# Load the township boundaries shapefile
+shape_data = gpd.read_file('PLSSFirstDivision.geojson')  # Replace with your shapefile path
+
+# Ensure the CRS for the township boundaries is set to WGS84
+shape_data.to_crs(epsg=4326, inplace=True)
+
+# Spatial join to assign points to township polygons
+joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
+
 # Calculate average values for each township polygon
 for col in columns[3:]:
     avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
@@ -72,7 +116,7 @@ html_template = f"""
 # Add options to the dropdown menu
 for col in columns[3:]:
     avg_col_name = f'avg_{col.split()[3].replace("(", "").replace(")", "").lower()}'
-    month_label = col.split()[3].replace("(", "").replace(")", "")
+    month_label = col.split()[2]
     html_template += f'<option value="{avg_col_name}">{month_label}</option>\n'
 
 html_template += f"""
@@ -121,7 +165,7 @@ for col in columns[3:]:
         var layer_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
             style: style_{avg_col_name},
             onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({col.split()[3]}): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.bindPopup('EUR ({col.split()[2]}): ' + feature.properties.{avg_col_name}.toFixed(2));
             }}
         }});
     """
