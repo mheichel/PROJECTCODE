@@ -1,235 +1,166 @@
-# Generate HTML
-html_template = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dynamic Map</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <style>
-        html, body {{
-            height: 100%;
-            margin: 0;
-        }}
-        #map {{
-            width: 100%;
-            height: 100%;
-        }}
-        #controls {{
-            position: absolute;
-            top: 10px;
-            left: 50px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .legend {{
-            position: absolute;
-            top: 10px;
-            right: 50px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-    </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://d3js.org/d3.v5.min.js"></script>
-</head>
-<body>
-    <div id="controls">
-        <select id="layer-select" onchange="updateMap()">
-"""
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import branca.colormap as cm
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
 
-# Add options to the dropdown menu for the first shapefile
-html_template += '<optgroup label="Shapefile 1">\n'
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f'<option value="1_{avg_col_name}">{months} Months</option>\n'
-html_template += '</optgroup>\n'
+# Load the wells_df
+columns = [
+    'API 14', 'Surface Longitude', 'Surface Latitude',
+    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
+    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
+    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
+    'EUR/PLL (BBL/FT) 60 Months', 'MyIntervalsPlus', 'MyPLLIntervals', 'MyVintages'
+]
 
-# Add options to the dropdown menu for the second shapefile
-html_template += '<optgroup label="Shapefile 2">\n'
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f'<option value="2_{avg_col_name}">{months} Months</option>\n'
-html_template += '</optgroup>\n'
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
 
-html_template += f"""
-        </select>
-    </div>
-    <div id="map"></div>
-    <div class="legend" id="legend"></div>
-    <script>
-        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+for col in columns[3:13]:
+    wells_df = wells_df[wells_df[col] > 0.1]
+    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
 
-        L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
-            maxZoom: 18,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }}).addTo(map);
+wells_df = wells_df.reset_index()
 
-        var colormaps = {{}};
-        var colormaps2 = {{}};
-"""
+# Calculate mean latitude and longitude
+mean_latitude = wells_df['latitude'].mean()
+mean_longitude = wells_df['longitude'].mean()
 
-# Add colormaps to the HTML for the first shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        colormaps['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([30,60,90,120,150,180])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
 
-# Add colormaps to the HTML for the second shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        colormaps2['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([30,60,90,120,150,180])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
+# Set the CRS to WGS84 (EPSG:4326)
+geo_data.set_crs(epsg=4326, inplace=True)
 
-# Add styles to the HTML for the first shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        function style_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
+# Load the township boundaries shapefile
+shape_data = gpd.read_file('PLSSFirstDivision.geojson')  # Replace with your shapefile path
 
-# Add styles to the HTML for the second shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        function style2_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps2['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
+# Ensure the CRS for the township boundaries is set to WGS84
+shape_data.to_crs(epsg=4326, inplace=True)
 
-# Add layers to the HTML for the first shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
-            style: style_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
-        }});
-        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
-        console.log('Defined layer_1_{avg_col_name}');
-    """
+# Spatial join to assign points to township polygons
+joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
 
-# Add layers to the HTML for the second shapefile
-for col in columns[3:]:
-    months = col.split()[3]
-    avg_col_name = f'avg_{months.lower()}_months'
-    html_template += f"""
-        var layer_2_{avg_col_name} = L.geoJson({geojson_data2[avg_col_name]}, {{
-            style: style2_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
-        }});
-        window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
-        console.log('Defined layer_2_{avg_col_name}');
-    """
+# Calculate average values for each township polygon
+avg_col_names = []
 
-html_template += """
-        var currentLayer = window['layer_1_avg_6_months'];
-        currentLayer.addTo(map);
-        console.log('Initialized currentLayer:', currentLayer);
+for col in columns[3:13]:
+    months = col.split()[2]
+    avg_col_name = f'avg_{months}_months'
+    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
+    avg_col_names.append(avg_col_name)
 
-        function updateMap() {
-            var selectedLayer = document.getElementById('layer-select').value;
-            console.log('Selected layer:', selectedLayer);
-            if (currentLayer) {
-                console.log('Removing current layer:', currentLayer);
-                map.removeLayer(currentLayer);
-            }
-            currentLayer = window['layer_' + selectedLayer];
-            console.log('Adding new layer:', currentLayer);
-            if (currentLayer) {
-                currentLayer.addTo(map);
-                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormapSet[selectedLayer.split("_")[1]], [0,30,60,90,120,150]);
-            } else {
-                console.error('Layer not found:', selectedLayer);
-            }
-        }
+# Drop sections where all the average values are 0
+shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
 
-        function updateLegend(colormap, domain) {
-            var legend = d3.select('#legend');
-            legend.html('<h4>EUR Value</h4>');
-            var legendScale = d3.scaleLinear()
-                .domain([domain[0], domain[domain.length - 1]])
-                .range([0, 300]);
-            var legendAxis = d3.axisBottom(legendScale)
-                .ticks(5)
-                .tickFormat(d3.format(".2f"));
+# Create colormaps for each time period
+colormaps = {}
 
-            var svg = legend.append('svg')
-                .attr('width', 320)
-                .attr('height', 50);
+for col in avg_col_names:
+    months = col[4]
+    avg_col_name = col
+    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                                vmin=shape_data[avg_col_name].min(),
+                                                vmax=150,
+                                                caption=f'EUR Value ({col})')
 
-            svg.append('g')
-                .attr('class', 'axis')
-                .attr('transform', 'translate(10,30)')
-                .call(legendAxis);
+# Create GeoJSON data for each dataset
+geojson_data = {}
 
-            var gradient = svg.append('defs')
-                .append('linearGradient')
-                .attr('id', 'gradient')
-                .attr('x1', '0%')
-                .attr('y1', '0%')
-                .attr('x2', '100%')
-                .attr('y2', '0%');
+for col in avg_col_names:
+    months = col
+    avg_col_name = col
+    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
 
-            domain.forEach(function(d, i) {
-                gradient.append('stop')
-                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
-                    .attr('stop-color', colormap(d));
-            });
+# Load the second shapefile
+shape_data2 = gpd.read_file('PLSSTownship.geojson')  # Replace with your second shapefile path
+shape_data2.set_crs(epsg=4326, inplace=True)
 
-            svg.append('rect')
-                .attr('width', 300)
-                .attr('height', 10)
-                .attr('x', 10)
-                .attr('y', 20)
-                .style('fill', 'url(#gradient)');
-        }
+# Spatial join to assign points to township polygons for the second shapefile
+joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
 
-        updateLegend(colormaps['avg_6_months'], [0,30,60,90,120,150]);
-    </script>
-</body>
-</html>
-"""
+avg_col_names = []
 
-# Save the HTML template
-with open('dynamic_map.html', 'w') as f:
-    f.write(html_template)
+for col in columns[3:13]:
+    months = col.split()[2]
+    avg_col_name = f'avg_{months}_months'
+    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
+    avg_col_names.append(avg_col_name)
 
-print("HTML file created successfully: dynamic_map.html")
+# Drop sections where all the average values are 0 for the second shapefile
+shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
+
+# Create colormaps and GeoJSON data for the second shapefile
+colormaps2 = {}
+geojson_data2 = {}
+
+for col in avg_col_names:
+    months = col
+    avg_col_name = f'{col}'
+    colormaps2[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                                 vmin=shape_data2[avg_col_name].min(),
+                                                 vmax=150,
+                                                 caption=f'EUR Value ({months})')
+    geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
+
+# Dash app setup
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("Well Data Heatmap"),
+    dcc.Dropdown(
+        id='intervals-dropdown',
+        options=[{'label': interval, 'value': interval} for interval in wells_df['MyIntervalsPlus'].unique()],
+        multi=True,
+        placeholder="Select Intervals"
+    ),
+    dcc.Dropdown(
+        id='pllintervals-dropdown',
+        options=[{'label': interval, 'value': interval} for interval in wells_df['MyPLLIntervals'].unique()],
+        multi=True,
+        placeholder="Select PLL Intervals"
+    ),
+    dcc.Dropdown(
+        id='vintages-dropdown',
+        options=[{'label': vintage, 'value': vintage} for vintage in wells_df['MyVintages'].unique()],
+        multi=True,
+        placeholder="Select Vintages"
+    ),
+    dcc.Graph(id='heatmap')
+])
+
+@app.callback(
+    Output('heatmap', 'figure'),
+    [Input('intervals-dropdown', 'value'),
+     Input('pllintervals-dropdown', 'value'),
+     Input('vintages-dropdown', 'value')]
+)
+def update_heatmap(selected_intervals, selected_pllintervals, selected_vintages):
+    filtered_df = wells_df.copy()
+
+    if selected_intervals:
+        filtered_df = filtered_df[filtered_df['MyIntervalsPlus'].isin(selected_intervals)]
+    if selected_pllintervals:
+        filtered_df = filtered_df[filtered_df['MyPLLIntervals'].isin(selected_pllintervals)]
+    if selected_vintages:
+        filtered_df = filtered_df[filtered_df['MyVintages'].isin(selected_vintages)]
+    
+    heatmap_data = filtered_df.groupby(['MyIntervalsPlus', 'MyPLLIntervals', 'MyVintages']).size().reset_index(name='Counts')
+    
+    fig = px.density_heatmap(
+        heatmap_data,
+        x='MyIntervalsPlus',
+        y='MyVintages',
+        z='Counts',
+        color_continuous_scale='Viridis'
+    )
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
