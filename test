@@ -1,5 +1,66 @@
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import json
+
+# Load the wells_df
+columns = [
+    'API 14', 'Surface Longitude', 'Surface Latitude',
+    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
+    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
+    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
+    'EUR/PLL (BBL/FT) 60 Months', 'MyIntervalPlus', 'MyPerfInterval', 'FirstProdYear'
+]
+
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
+
+for col in columns[3:13]:
+    wells_df = wells_df[wells_df[col] > 0.1]
+    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
+
+wells_df = wells_df.reset_index()
+
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
+geo_data.set_crs(epsg=4326, inplace=True)
+
+# Load the township boundaries shapefile
+shape_data1 = gpd.read_file('PLSSFirstDivision.geojson')
+shape_data1.to_crs(epsg=4326, inplace=True)
+
+shape_data2 = gpd.read_file('PLSSTownship.geojson')
+shape_data2.to_crs(epsg=4326, inplace=True)
+
+# Spatial join to assign points to township polygons
+joined1 = gpd.sjoin(geo_data, shape_data1, how='left', op='within')
+joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
+
+# Calculate average values for each township polygon
+def calculate_averages(joined, shape_data):
+    avg_col_names = []
+    for col in columns[3:13]:
+        months = col.split()[2]
+        avg_col_name = f'avg_{months}_months'
+        shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
+        avg_col_names.append(avg_col_name)
+    shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
+    return shape_data, avg_col_names
+
+shape_data1, avg_col_names1 = calculate_averages(joined1, shape_data1)
+shape_data2, avg_col_names2 = calculate_averages(joined2, shape_data2)
+
+# Save the joined data to JSON for client-side processing
+shape_data1.to_file('shape_data1.json', driver='GeoJSON')
+shape_data2.to_file('shape_data2.json', driver='GeoJSON')
+
 # Generate the HTML template
 def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
+    months_values = [col.split('_')[1] for col in avg_col_names]  # Extract month values
+
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -52,7 +113,7 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
             </select>
             <label for="eurpll-select">Select EUR/PLL:</label>
             <select id="eurpll-select" title="Select EUR/PLL">
-                {''.join([f'<option value="avg_{col.split()[1]}_months">{col.split()[1]} Months</option>' for col in avg_col_names])}
+                {''.join([f'<option value="avg_{months}_months">{months} Months</option>' for months in months_values])}
             </select>
             <label for="intervals-select">Select Intervals:</label>
             <select id="intervals-select" multiple title="Select Intervals">
@@ -250,10 +311,10 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
     </body>
     </html>
     """
-    
+
     with open('dynamic_map.html', 'w') as f:
         f.write(html_template)
-    
+
     print("HTML file created successfully: dynamic_map.html")
 
 # Calculate mean latitude and longitude
