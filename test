@@ -99,170 +99,186 @@ def generate_html_template(mean_latitude, mean_longitude, intervals, pll_interva
         </style>
         <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
         <script src="https://d3js.org/d3.v5.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/branca/0.4.2/branca.min.js"></script>
+    </head>
+    <body>
+        <div id="controls">
+            <label for="shapefile-select">Select Shapefile:</label>
+            <select id="shapefile-select" onchange="updateMap()" title="Select Shapefile">
+                <option value="joined1.json">First Shapefile</option>
+                <option value="joined2.json">Second Shapefile</option>
+            </select>
+            <label for="eurpll-select">Select EUR/PLL:</label>
+            <select id="eurpll-select" onchange="updateMap()" title="Select EUR/PLL">
+                {''.join([f'<option value="avg_{col.split()[2]}_months">{col.split()[2]} Months</option>' for col in columns[3:13]])}
+            </select>
+            <label for="intervals-select">Select Intervals:</label>
+            <select id="intervals-select" multiple onchange="updateMap()" title="Select Intervals">
+                <option value="All" selected>All</option>
+                {''.join([f'<option value="{interval}">{interval}</option>' for interval in intervals if interval != "All"])}
+            </select>
+            <label for="pllintervals-select">Select PLL Intervals:</label>
+            <select id="pllintervals-select" multiple onchange="updateMap()" title="Select PLL Intervals">
+                <option value="All" selected>All</option>
+                {''.join([f'<option value="{interval}">{interval}</option>' for interval in pll_intervals if interval != "All"])}
+            </select>
+            <label for="vintages-select">Select Vintages:</label>
+            <select id="vintages-select" multiple onchange="updateMap()" title="Select Vintages">
+                <option value="All" selected>All</option>
+                {''.join([f'<option value="{vintage}">{vintage}</option>' for vintage in vintages if vintage != "All"])}
+            </select>
+        </div>
+        <div id="map"></div>
+        <div class="legend" id="legend"></div>
         <script>
-            var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+            document.addEventListener("DOMContentLoaded", function() {
+                var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
-            L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
-                maxZoom: 18,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }}).addTo(map);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 18,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
 
-            var currentLayer;
-            var joinedData1, joinedData2;
+                var currentLayer;
 
-            // Load joined data
-            fetch('joined1.json')
-                .then(response => response.json())
-                .then(data => {{
-                    joinedData1 = data;
-                    updateMap();
-                }});
+                function getColor(d) {
+                    return d > 150 ? '#800026' :
+                           d > 100 ? '#BD0026' :
+                           d > 50  ? '#E31A1C' :
+                           d > 20  ? '#FC4E2A' :
+                           d > 10  ? '#FD8D3C' :
+                           d > 5   ? '#FEB24C' :
+                           d > 0   ? '#FED976' :
+                                    '#FFEDA0';
+                }
 
-            fetch('joined2.json')
-                .then(response => response.json())
-                .then(data => {{
-                    joinedData2 = data;
-                }});
+                function style(feature, eurpllColumn) {
+                    return {
+                        fillColor: getColor(feature.properties[eurpllColumn]),
+                        weight: 2,
+                        opacity: 1,
+                        color: 'white',
+                        dashArray: '3',
+                        fillOpacity: 0.7
+                    };
+                }
 
-            function getColor(d) {{
-                return d > 150 ? '#800026' :
-                       d > 100 ? '#BD0026' :
-                       d > 50  ? '#E31A1C' :
-                       d > 20  ? '#FC4E2A' :
-                       d > 10  ? '#FD8D3C' :
-                       d > 5   ? '#FEB24C' :
-                       d > 0   ? '#FED976' :
-                                '#FFEDA0';
-            }}
+                function onEachFeature(feature, layer, eurpllColumn) {
+                    if (feature.properties[eurpllColumn] !== undefined) {
+                        layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
+                    } else {
+                        layer.bindPopup('No data available');
+                    }
+                }
 
-            function style(feature, eurpllColumn) {{
-                return {{
-                    fillColor: getColor(feature.properties[eurpllColumn]),
-                    weight: 2,
-                    opacity: 1,
-                    color: 'white',
-                    dashArray: '3',
-                    fillOpacity: 0.7
-                }};
-            }}
+                function updateLegend(eurpllColumn) {
+                    var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
+                    var grades = [0, 5, 10, 20, 50, 100, 150];
+                    var labels = [];
+                    var colors = ["#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"];
+                    for (var i = 0; i < grades.length; i++) {
+                        labels.push(
+                            '<i style="background:' + colors[i] + '"></i> ' +
+                            grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
+                        );
+                    }
+                    legend.html(labels.join('<br>'));
+                }
 
-            function onEachFeature(feature, layer, eurpllColumn) {{
-                if (feature.properties[eurpllColumn] !== undefined) {{
-                    layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
-                }} else {{
-                    layer.bindPopup('No data available');
-                }}
-            }}
+                function updateMap() {
+                    var selectedShapefile = document.getElementById('shapefile-select').value;
+                    var selectedEURPLL = document.getElementById('eurpll-select').value;
+                    var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
+                    var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
+                    var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
-            function updateLegend(eurpllColumn) {{
-                var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
-                var grades = [0, 5, 10, 20, 50, 100, 150];
-                var labels = [];
-                var colors = ["#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"];
-                for (var i = 0; i < grades.length; i++) {{
-                    labels.push(
-                        '<i style="background:' + colors[i] + '"></i> ' +
-                        grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
-                    );
-                }}
-                legend.html(labels.join('<br>'));
-            }}
+                    if (selectedIntervals.includes("All")) {
+                        selectedIntervals = {json.dumps(intervals.tolist())};
+                    }
+                    if (selectedPLLIntervals.includes("All")) {
+                        selectedPLLIntervals = {json.dumps(pll_intervals.tolist())};
+                    }
+                    if (selectedVintages.includes("All")) {
+                        selectedVintages = {json.dumps(vintages.tolist())};
+                    }
 
-            function updateMap() {{
-                var selectedShapefile = document.getElementById('shapefile-select').value;
-                var selectedEURPLL = document.getElementById('eurpll-select').value;
-                var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
-                var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
-                var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
+                    fetch(selectedShapefile)
+                        .then(response => response.json())
+                        .then(data => {
+                            var filteredData = data.features.filter(feature => (
+                                selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
+                                selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
+                                selectedVintages.includes(feature.properties.FirstProdYear)
+                            ));
 
-                if (selectedIntervals.includes("All")) {{
-                    selectedIntervals = {json.dumps([interval for interval in intervals if interval != "All"])};
-                }}
-                if (selectedPLLIntervals.includes("All")) {{
-                    selectedPLLIntervals = {json.dumps([interval for interval in pll_intervals if interval != "All"])};
-                }}
-                if (selectedVintages.includes("All")) {{
-                    selectedVintages = {json.dumps([vintage for vintage in vintages if vintage != "All"])};
-                }}
+                            var geojson = {
+                                type: 'FeatureCollection',
+                                features: filteredData
+                            };
 
-                var filteredData;
-                if (selectedShapefile === 'shapefile1') {{
-                    filteredData = joinedData1.features.filter(feature => (
-                        selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
-                        selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
-                        selectedVintages.includes(feature.properties.FirstProdYear)
-                    ));
-                }} else {{
-                    filteredData = joinedData2.features.filter(feature => (
-                        selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
-                        selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
-                        selectedVintages.includes(feature.properties.FirstProdYear)
-                    ));
-                }}
+                            if (currentLayer) {
+                                map.removeLayer(currentLayer);
+                            }
+                            currentLayer = L.geoJSON(geojson, {
+                                style: function(feature) {
+                                    return style(feature, selectedEURPLL);
+                                },
+                                onEachFeature: function(feature, layer) {
+                                    return onEachFeature(feature, layer, selectedEURPLL);
+                                }
+                            }).addTo(map);
+                            updateLegend(selectedEURPLL);
+                        })
+                        .catch(error => {
+                            console.error('Error loading GeoJSON data:', error);
+                            alert('Error loading data. Please check your selections and try again.');
+                        });
+                }
 
-                var geojson = {{
-                    type: 'FeatureCollection',
-                    features: filteredData
-                }};
+                function populateSelectOptions() {
+                    const eurpllSelect = document.getElementById('eurpll-select');
+                    const intervalsSelect = document.getElementById('intervals-select');
+                    const pllintervalsSelect = document.getElementById('pllintervals-select');
+                    const vintagesSelect = document.getElementById('vintages-select');
 
-                if (currentLayer) {{
-                    map.removeLayer(currentLayer);
-                }}
-                currentLayer = L.geoJSON(geojson, {{
-                    style: function(feature) {{
-                        return style(feature, selectedEURPLL);
-                    }},
-                    onEachFeature: function(feature, layer) {{
-                        return onEachFeature(feature, layer, selectedEURPLL);
-                    }}
-                }}).addTo(map);
-                updateLegend(selectedEURPLL);
-            }}
+                    const columns = {json.dumps(columns[3:13])};
+                    const intervals = {json.dumps(intervals.tolist())};
+                    const pll_intervals = {json.dumps(pll_intervals.tolist())};
+                    const vintages = {json.dumps(vintages.tolist())};
 
-            function populateSelectOptions() {{
-                const eurpllSelect = document.getElementById('eurpll-select');
-                const intervalsSelect = document.getElementById('intervals-select');
-                const pllintervalsSelect = document.getElementById('pllintervals-select');
-                const vintagesSelect = document.getElementById('vintages-select');
+                    columns.forEach(col => {
+                        const months = col.split(' ')[2];
+                        const option = document.createElement('option');
+                        option.value = `avg_${months}_months`;
+                        option.text = `${months} Months`;
+                        eurpllSelect.appendChild(option);
+                    });
 
-                const columns = {json.dumps(columns[3:13])};
-                const intervals = {json.dumps([interval for interval in intervals if interval != "All"])};
-                const pll_intervals = {json.dumps([interval for interval in pll_intervals if interval != "All"])};
-                const vintages = {json.dumps([vintage for vintage in vintages if vintage != "All"])};
+                    intervals.forEach(interval => {
+                        const option = document.createElement('option');
+                        option.value = interval;
+                        option.text = interval;
+                        intervalsSelect.appendChild(option);
+                    });
 
-                columns.forEach(col => {{
-                    const months = col.split(' ')[2];
-                    const option = document.createElement('option');
-                    option.value = `avg_${{months}}_months`;
-                    option.text = `${{months}} Months`;
-                    eurpllSelect.appendChild(option);
-                }});
+                    pll_intervals.forEach(interval => {
+                        const option = document.createElement('option');
+                        option.value = interval;
+                        option.text = interval;
+                        pllintervalsSelect.appendChild(option);
+                    });
 
-                intervals.forEach(interval => {{
-                    const option = document.createElement('option');
-                    option.value = interval;
-                    option.text = interval;
-                    intervalsSelect.appendChild(option);
-                }});
+                    vintages.forEach(vintage => {
+                        const option = document.createElement('option');
+                        option.value = vintage;
+                        option.text = vintage;
+                        vintagesSelect.appendChild(option);
+                    });
+                }
 
-                pll_intervals.forEach(interval => {{
-                    const option = document.createElement('option');
-                    option.value = interval;
-                    option.text = interval;
-                    pllintervalsSelect.appendChild(option);
-                }});
-
-                vintages.forEach(vintage => {{
-                    const option = document.createElement('option');
-                    option.value = vintage;
-                    option.text = vintage;
-                    vintagesSelect.appendChild(option);
-                }});
-            }}
-
-            // Initialize the map with the default settings
-            populateSelectOptions();
+                // Initialize the map with the default settings
+                populateSelectOptions();
+                updateMap();
+            });
         </script>
     </body>
     </html>
