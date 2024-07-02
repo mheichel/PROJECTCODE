@@ -35,11 +35,15 @@ geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
 geo_data.set_crs(epsg=4326, inplace=True)
 
 # Load the township boundaries shapefile
-shape_data = gpd.read_file('PLSSFirstDivision.geojson')
-shape_data.to_crs(epsg=4326, inplace=True)
+shape_data1 = gpd.read_file('PLSSFirstDivision.geojson')
+shape_data1.to_crs(epsg=4326, inplace=True)
+
+shape_data2 = gpd.read_file('PLSSTownship.geojson')
+shape_data2.to_crs(epsg=4326, inplace=True)
 
 # Spatial join to assign points to township polygons
-joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
+joined1 = gpd.sjoin(geo_data, shape_data1, how='left', op='within')
+joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
 
 # Get unique values for filters
 intervals = np.append(wells_df['MyIntervalPlus'].unique(), 'All')
@@ -49,42 +53,47 @@ vintages = np.append(wells_df['FirstProdYear'].unique(), 'All')
 output_dir = 'precomputed_geojsons'
 os.makedirs(output_dir, exist_ok=True)
 
-# Precompute and save filtered datasets
+# Function to save filtered GeoJSON data
+def save_filtered_geojson(joined, shape_data, interval, pll_interval, vintage, shapefile_name):
+    if interval == 'All':
+        filtered_interval = joined
+    else:
+        filtered_interval = joined[joined['MyIntervalPlus'] == interval]
+
+    if pll_interval == 'All':
+        filtered_pll_interval = filtered_interval
+    else:
+        filtered_pll_interval = filtered_interval[filtered_interval['MyPerfInterval'] == pll_interval]
+
+    if vintage == 'All':
+        filtered = filtered_pll_interval
+    else:
+        filtered = filtered_pll_interval[filtered_pll_interval['FirstProdYear'] == vintage]
+
+    if not filtered.empty:
+        avg_col_names = []
+        for col in columns[3:13]:
+            months = col.split()[2]
+            avg_col_name = f'avg_{months}_months'
+            shape_data[avg_col_name] = filtered.groupby('index_right')[col].mean()
+            avg_col_names.append(avg_col_name)
+
+        shape_data_filtered = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
+        geojson_filtered = shape_data_filtered.to_json()
+
+        filename = f'{interval}_{pll_interval}_{vintage}_{shapefile_name}.geojson'
+        sanitized_filename = sanitize_filename(filename)
+        filepath = os.path.join(output_dir, sanitized_filename)
+
+        with open(filepath, 'w') as f:
+            f.write(geojson_filtered)
+
+# Precompute and save filtered datasets for both shapefiles
 for interval in intervals:
     for pll_interval in pll_intervals:
         for vintage in vintages:
-            if interval == 'All':
-                filtered_interval = joined
-            else:
-                filtered_interval = joined[joined['MyIntervalPlus'] == interval]
-            
-            if pll_interval == 'All':
-                filtered_pll_interval = filtered_interval
-            else:
-                filtered_pll_interval = filtered_interval[filtered_interval['MyPerfInterval'] == pll_interval]
-            
-            if vintage == 'All':
-                filtered = filtered_pll_interval
-            else:
-                filtered = filtered_pll_interval[filtered_pll_interval['FirstProdYear'] == vintage]
-            
-            if not filtered.empty:
-                avg_col_names = []
-                for col in columns[3:13]:
-                    months = col.split()[2]
-                    avg_col_name = f'avg_{months}_months'
-                    shape_data[avg_col_name] = filtered.groupby('index_right')[col].mean()
-                    avg_col_names.append(avg_col_name)
-                
-                shape_data_filtered = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-                geojson_filtered = shape_data_filtered.to_json()
-                
-                filename = f'{interval}_{pll_interval}_{vintage}.geojson'
-                sanitized_filename = sanitize_filename(filename)
-                filepath = os.path.join(output_dir, sanitized_filename)
-                
-                with open(filepath, 'w') as f:
-                    f.write(geojson_filtered)
+            save_filtered_geojson(joined1, shape_data1, interval, pll_interval, vintage, 'shapefile1')
+            save_filtered_geojson(joined2, shape_data2, interval, pll_interval, vintage, 'shapefile2')
 
 print("Precomputed GeoJSON files saved in:", output_dir)
 
@@ -137,8 +146,8 @@ def generate_html_template(mean_latitude, mean_longitude, intervals, pll_interva
         <div id="controls">
             <label for="shapefile-select">Select Shapefile:</label>
             <select id="shapefile-select" onchange="updateMap()" title="Select Shapefile">
-                <option value="geojson1">First Shapefile</option>
-                <option value="geojson2">Second Shapefile</option>
+                <option value="shapefile1">First Shapefile</option>
+                <option value="shapefile2">Second Shapefile</option>
             </select>
             <label for="eurpll-select">Select EUR/PLL:</label>
             <select id="eurpll-select" onchange="updateMap()" title="Select EUR/PLL">
@@ -224,16 +233,16 @@ def generate_html_template(mean_latitude, mean_longitude, intervals, pll_interva
                 var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
                 if (selectedIntervals.includes("All")) {{
-                    selectedIntervals = {json.dumps(intervals.tolist())};
+                    selectedIntervals = {json.dumps([interval for interval in intervals if interval != "All"])};
                 }}
                 if (selectedPLLIntervals.includes("All")) {{
-                    selectedPLLIntervals = {json.dumps(pll_intervals.tolist())};
+                    selectedPLLIntervals = {json.dumps([interval for interval in pll_intervals if interval != "All"])};
                 }}
                 if (selectedVintages.includes("All")) {{
-                    selectedVintages = {json.dumps(vintages.tolist())};
+                    selectedVintages = {json.dumps([vintage for vintage in vintages if vintage != "All"])};
                 }}
 
-                var filename = `${{selectedIntervals[0]}}_${{selectedPLLIntervals[0]}}_${{selectedVintages[0]}}.geojson`;
+                var filename = `${{selectedIntervals[0]}}_${{selectedPLLIntervals[0]}}_${{selectedVintages[0]}}_${{selectedShapefile}}.geojson`;
                 var sanitizedFilename = sanitizeFilename(filename);
                 var filepath = `precomputed_geojsons/${{sanitizedFilename}}`;
 
@@ -266,9 +275,9 @@ def generate_html_template(mean_latitude, mean_longitude, intervals, pll_interva
                 const vintagesSelect = document.getElementById('vintages-select');
 
                 const columns = {json.dumps(columns[3:13])};
-                const intervals = {json.dumps(intervals.tolist())};
-                const pll_intervals = {json.dumps(pll_intervals.tolist())};
-                const vintages = {json.dumps(vintages.tolist())};
+                const intervals = {json.dumps([interval for interval in intervals if interval != "All"])};
+                const pll_intervals = {json.dumps([interval for interval in pll_intervals if interval != "All"])};
+                const vintages = {json.dumps([vintage for vintage in vintages if vintage != "All"])};
 
                 columns.forEach(col => {{
                     const months = col.split(' ')[2];
