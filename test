@@ -137,7 +137,7 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
             document.addEventListener("DOMContentLoaded", function() {{
                 var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
-                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+                L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
                     maxZoom: 18,
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 }}).addTo(map);
@@ -201,13 +201,13 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
                     var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
                     if (selectedIntervals.includes("All")) {{
-                        selectedIntervals = intervals;
+                        selectedIntervals = {json.dumps(intervals)};
                     }}
                     if (selectedPLLIntervals.includes("All")) {{
-                        selectedPLLIntervals = pll_intervals;
+                        selectedPLLIntervals = {json.dumps(pll_intervals)};
                     }}
                     if (selectedVintages.includes("All")) {{
-                        selectedVintages = vintages;
+                        selectedVintages = {json.dumps(vintages)};
                     }}
 
                     fetch(selectedShapefile)
