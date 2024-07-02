@@ -83,7 +83,7 @@ geojson2 = json.loads(shape_data2.to_json())
 def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
     html_template = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <title>Dynamic Map</title>
         <meta charset="utf-8">
@@ -126,20 +126,25 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
     </head>
     <body>
         <div id="controls">
-            <select id="shapefile-select" onchange="updateMap()">
+            <label for="shapefile-select">Select Shapefile:</label>
+            <select id="shapefile-select" onchange="updateMap()" title="Select Shapefile">
                 <option value="geojson1">First Shapefile</option>
                 <option value="geojson2">Second Shapefile</option>
             </select>
-            <select id="eurpll-select" onchange="updateMap()">
+            <label for="eurpll-select">Select EUR/PLL:</label>
+            <select id="eurpll-select" onchange="updateMap()" title="Select EUR/PLL">
                 {''.join([f'<option value="avg_{col.split()[2]}_months">{col.split()[2]} Months</option>' for col in columns[3:13]])}
             </select>
-            <select id="intervals-select" multiple onchange="updateMap()">
+            <label for="intervals-select">Select Intervals:</label>
+            <select id="intervals-select" multiple onchange="updateMap()" title="Select Intervals">
                 {''.join([f'<option value="{interval}">{interval}</option>' for interval in wells_df['MyIntervalPlus'].unique()])}
             </select>
-            <select id="pllintervals-select" multiple onchange="updateMap()">
+            <label for="pllintervals-select">Select PLL Intervals:</label>
+            <select id="pllintervals-select" multiple onchange="updateMap()" title="Select PLL Intervals">
                 {''.join([f'<option value="{interval}">{interval}</option>' for interval in wells_df['MyPerfInterval'].unique()])}
             </select>
-            <select id="vintages-select" multiple onchange="updateMap()">
+            <label for="vintages-select">Select Vintages:</label>
+            <select id="vintages-select" multiple onchange="updateMap()" title="Select Vintages">
                 {''.join([f'<option value="{vintage}">{vintage}</option>' for vintage in wells_df['FirstProdYear'].unique()])}
             </select>
         </div>
