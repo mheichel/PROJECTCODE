@@ -1,99 +1,41 @@
-                function updateMap() {
-                    var selectedShapefile = document.getElementById('shapefile-select').value;
-                    var selectedEURPLL = document.getElementById('eurpll-select').value;
-                    var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
-                    var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
-                    var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
+        function populateSelectOptions() {
+            const eurpllSelect = document.getElementById('eurpll-select');
+            const intervalsSelect = document.getElementById('intervals-select');
+            const pllintervalsSelect = document.getElementById('pllintervals-select');
+            const vintagesSelect = document.getElementById('vintages-select');
 
-                    if (selectedIntervals.includes("All")) {
-                        selectedIntervals = intervals;
-                    }
-                    if (selectedPLLIntervals.includes("All")) {
-                        selectedPLLIntervals = pll_intervals;
-                    }
-                    if (selectedVintages.includes("All")) {
-                        selectedVintages = vintages;
-                    }
-
-                    fetch(selectedShapefile)
-                        .then(response => response.json())
-                        .then(data => {
-                            var filteredData = data.features.filter(feature => (
-                                selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
-                                selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
-                                selectedVintages.includes(feature.properties.FirstProdYear)
-                            ));
-
-                            var geojson = {
-                                type: 'FeatureCollection',
-                                features: filteredData
-                            };
-
-                            if (currentLayer) {
-                                map.removeLayer(currentLayer);
-                            }
-                            currentLayer = L.geoJSON(geojson, {
-                                style: function(feature) {
-                                    return style(feature, selectedEURPLL);
-                                },
-                                onEachFeature: function(feature, layer) {
-                                    return onEachFeature(feature, layer, selectedEURPLL);
-                                }
-                            }).addTo(map);
-                            updateLegend(selectedEURPLL);
-                        })
-                        .catch(error => {
-                            console.error('Error loading GeoJSON data:', error);
-                            alert('Error loading data. Please check your selections and try again.');
-                        });
-                }
-
-                function populateSelectOptions() {
-                    const eurpllSelect = document.getElementById('eurpll-select');
-                    const intervalsSelect = document.getElementById('intervals-select');
-                    const pllintervalsSelect = document.getElementById('pllintervals-select');
-                    const vintagesSelect = document.getElementById('vintages-select');
-
-                    const columns = {json.dumps(columns[3:13])};
-                    const intervals = {json.dumps(intervals.tolist())};
-                    const pll_intervals = {json.dumps(pll_intervals.tolist())};
-                    const vintages = {json.dumps(vintages.tolist())};
-
-                    columns.forEach(col => {
-                        const months = col.split(' ')[2];
-                        const option = document.createElement('option');
-                        option.value = `avg_${months}_months`;
-                        option.text = `${months} Months`;
-                        eurpllSelect.appendChild(option);
-                    });
-
-                    intervals.forEach(interval => {
-                        const option = document.createElement('option');
-                        option.value = interval;
-                        option.text = interval;
-                        intervalsSelect.appendChild(option);
-                    });
-
-                    pll_intervals.forEach(interval => {
-                        const option = document.createElement('option');
-                        option.value = interval;
-                        option.text = interval;
-                        pllintervalsSelect.appendChild(option);
-                    });
-
-                    vintages.forEach(vintage => {
-                        const option = document.createElement('option');
-                        option.value = vintage;
-                        option.text = vintage;
-                        vintagesSelect.appendChild(option);
-                    });
-                }
-
-                // Initialize the map with the default settings
-                populateSelectOptions();
-                updateMap();
+            columns.forEach(col => {
+                const months = col.split(' ')[2];
+                const option = document.createElement('option');
+                option.value = `avg_${months}_months`;
+                option.text = `${months} Months`;
+                eurpllSelect.appendChild(option);
             });
-        </script>
-    </body>
-    </html>
-    """
+
+            intervals.forEach(interval => {
+                const option = document.createElement('option');
+                option.value = interval;
+                option.text = interval;
+                intervalsSelect.appendChild(option);
+            });
+
+            pll_intervals.forEach(interval => {
+                const option = document.createElement('option');
+                option.value = interval;
+                option.text = interval;
+                pllintervalsSelect.appendChild(option);
+            });
+
+            vintages.forEach(vintage => {
+                const option = document.createElement('option');
+                option.value = vintage;
+                option.text = vintage;
+                vintagesSelect.appendChild(option);
+            });
+        }
+
+        // Initialize the map with the default settings
+        populateSelectOptions();
+        updateMap();
+    });
+</script>
