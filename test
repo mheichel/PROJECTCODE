@@ -1,41 +1,5 @@
-        function populateSelectOptions() {
-            const eurpllSelect = document.getElementById('eurpll-select');
-            const intervalsSelect = document.getElementById('intervals-select');
-            const pllintervalsSelect = document.getElementById('pllintervals-select');
-            const vintagesSelect = document.getElementById('vintages-select');
-
-            columns.forEach(col => {
-                const months = col.split(' ')[2];
-                const option = document.createElement('option');
-                option.value = `avg_${months}_months`;
-                option.text = `${months} Months`;
-                eurpllSelect.appendChild(option);
-            });
-
-            intervals.forEach(interval => {
-                const option = document.createElement('option');
-                option.value = interval;
-                option.text = interval;
-                intervalsSelect.appendChild(option);
-            });
-
-            pll_intervals.forEach(interval => {
-                const option = document.createElement('option');
-                option.value = interval;
-                option.text = interval;
-                pllintervalsSelect.appendChild(option);
-            });
-
-            vintages.forEach(vintage => {
-                const option = document.createElement('option');
-                option.value = vintage;
-                option.text = vintage;
-                vintagesSelect.appendChild(option);
-            });
-        }
-
-        // Initialize the map with the default settings
-        populateSelectOptions();
-        updateMap();
-    });
-</script>
+        var currentLayer;
+        var intervals = {{ json.dumps(intervals.tolist()) }};
+        var pll_intervals = {{ json.dumps(pll_intervals.tolist()) }};
+        var vintages = {{ json.dumps(vintages.tolist()) }};
+        var columns = {{ json.dumps(columns[3:13]) }};
