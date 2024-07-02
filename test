@@ -1,5 +1,150 @@
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var map = L.map('map').setView([{{ mean_latitude }}, {{ mean_longitude }}], 10);
+
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
         var currentLayer;
-        var intervals = {{ json.dumps(intervals.tolist()) }};
-        var pll_intervals = {{ json.dumps(pll_intervals.tolist()) }};
-        var vintages = {{ json.dumps(vintages.tolist()) }};
-        var columns = {{ json.dumps(columns[3:13]) }};
+
+        var columns = [6,12,18,24,30,36,42,48,54,60];
+        var vintages = ['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023];
+        var pll_intervals = ['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT'];
+        var intervals = ['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER'];
+
+        function getColor(d) {
+            return d > 150 ? '#800026' :
+                   d > 100 ? '#BD0026' :
+                   d > 50  ? '#E31A1C' :
+                   d > 20  ? '#FC4E2A' :
+                   d > 10  ? '#FD8D3C' :
+                   d > 5   ? '#FEB24C' :
+                   d > 0   ? '#FED976' :
+                            '#FFEDA0';
+        }
+
+        function style(feature, eurpllColumn) {
+            return {
+                fillColor: getColor(feature.properties[eurpllColumn]),
+                weight: 2,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+            };
+        }
+
+        function onEachFeature(feature, layer, eurpllColumn) {
+            if (feature.properties[eurpllColumn] !== undefined) {
+                layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
+            } else {
+                layer.bindPopup('No data available');
+            }
+        }
+
+        function updateLegend(eurpllColumn) {
+            var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
+            var grades = [0, 5, 10, 20, 50, 100, 150];
+            var labels = [];
+            var colors = ["#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"];
+            for (var i = 0; i < grades.length; i++) {
+                labels.push(
+                    '<i style="background:' + colors[i] + '"></i> ' +
+                    grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
+                );
+            }
+            legend.html(labels.join('<br>'));
+        }
+
+        function updateMap() {
+            var selectedShapefile = document.getElementById('shapefile-select').value;
+            var selectedEURPLL = document.getElementById('eurpll-select').value;
+            var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
+            var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
+            var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
+
+            if (selectedIntervals.includes("All")) {
+                selectedIntervals = intervals;
+            }
+            if (selectedPLLIntervals.includes("All")) {
+                selectedPLLIntervals = pll_intervals;
+            }
+            if (selectedVintages.includes("All")) {
+                selectedVintages = vintages;
+            }
+
+            fetch(selectedShapefile)
+                .then(response => response.json())
+                .then(data => {
+                    var filteredData = data.features.filter(feature => (
+                        selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
+                        selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
+                        selectedVintages.includes(feature.properties.FirstProdYear)
+                    ));
+
+                    var geojson = {
+                        type: 'FeatureCollection',
+                        features: filteredData
+                    };
+
+                    if (currentLayer) {
+                        map.removeLayer(currentLayer);
+                    }
+                    currentLayer = L.geoJSON(geojson, {
+                        style: function(feature) {
+                            return style(feature, selectedEURPLL);
+                        },
+                        onEachFeature: function(feature, layer) {
+                            return onEachFeature(feature, layer, selectedEURPLL);
+                        }
+                    }).addTo(map);
+                    updateLegend(selectedEURPLL);
+                })
+                .catch(error => {
+                    console.error('Error loading GeoJSON data:', error);
+                    alert('Error loading data. Please check your selections and try again.');
+                });
+        }
+
+        function populateSelectOptions() {
+            const eurpllSelect = document.getElementById('eurpll-select');
+            const intervalsSelect = document.getElementById('intervals-select');
+            const pllintervalsSelect = document.getElementById('pllintervals-select');
+            const vintagesSelect = document.getElementById('vintages-select');
+
+            columns.forEach(month => {
+                const option = document.createElement('option');
+                option.value = `avg_${month}_months`;
+                option.text = `${month} Months`;
+                eurpllSelect.appendChild(option);
+            });
+
+            intervals.forEach(interval => {
+                const option = document.createElement('option');
+                option.value = interval;
+                option.text = interval;
+                intervalsSelect.appendChild(option);
+            });
+
+            pll_intervals.forEach(interval => {
+                const option = document.createElement('option');
+                option.value = interval;
+                option.text = interval;
+                pllintervalsSelect.appendChild(option);
+            });
+
+            vintages.forEach(vintage => {
+                const option = document.createElement('option');
+                option.value = vintage;
+                option.text = vintage;
+                vintagesSelect.appendChild(option);
+            });
+        }
+
+        // Initialize the map with the default settings
+        populateSelectOptions();
+        updateMap();
+    });
+</script>
