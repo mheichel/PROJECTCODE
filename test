@@ -1,62 +1,3 @@
-import pandas as pd
-import geopandas as gpd
-import numpy as np
-from shapely.geometry import Point
-import json
-
-# Load the wells_df
-columns = [
-    'API 14', 'Surface Longitude', 'Surface Latitude',
-    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
-    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
-    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
-    'EUR/PLL (BBL/FT) 60 Months', 'MyIntervalPlus', 'MyPerfInterval', 'FirstProdYear'
-]
-
-wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
-wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-wells_df = wells_df[wells_df['latitude'] > 0.1]
-
-for col in columns[3:13]:
-    wells_df = wells_df[wells_df[col] > 0.1]
-    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
-
-wells_df = wells_df.reset_index()
-
-# Convert well data to GeoDataFrame
-geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
-geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
-geo_data.set_crs(epsg=4326, inplace=True)
-
-# Load the township boundaries shapefile
-shape_data1 = gpd.read_file('PLSSFirstDivision.geojson')
-shape_data1.to_crs(epsg=4326, inplace=True)
-
-shape_data2 = gpd.read_file('PLSSTownship.geojson')
-shape_data2.to_crs(epsg=4326, inplace=True)
-
-# Spatial join to assign points to township polygons
-joined1 = gpd.sjoin(geo_data, shape_data1, how='left', op='within')
-joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
-
-# Calculate average values for each township polygon
-def calculate_averages(joined, shape_data):
-    avg_col_names = []
-    for col in columns[3:13]:
-        months = col.split()[2]
-        avg_col_name = f'avg_{months}_months'
-        shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
-        avg_col_names.append(avg_col_name)
-    shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-    return shape_data, avg_col_names
-
-shape_data1, avg_col_names1 = calculate_averages(joined1, shape_data1)
-shape_data2, avg_col_names2 = calculate_averages(joined2, shape_data2)
-
-# Save the joined data to JSON for client-side processing
-shape_data1.to_file('shape_data1.json', driver='GeoJSON')
-shape_data2.to_file('shape_data2.json', driver='GeoJSON')
-
 # Generate the HTML template
 def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
     html_template = f"""
@@ -101,7 +42,6 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
         </style>
         <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
         <script src="https://d3js.org/d3.v5.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/branca/0.4.2/branca.min.js"></script>
     </head>
     <body>
         <div id="controls">
@@ -133,13 +73,13 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
         <div id="map"></div>
         <div class="legend" id="legend"></div>
         <script>
-            document.addEventListener("DOMContentLoaded", function() {
+            document.addEventListener("DOMContentLoaded", function() {{
                 var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                     maxZoom: 18,
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(map);
+                }}).addTo(map);
 
                 var currentLayer;
 
@@ -148,7 +88,7 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
                 var pll_intervals = ['PLL < 5000 FT', '5000 FT =< PLL <= 7500 FT', '7500 FT < PLL < 10000 FT', '10000 FT < PLL < 12500 FT', '12500 FT < PLL < 15000 FT', 'PLL > 15000 FT'];
                 var intervals = ['AVALON', '1ST BONESPRING', '2ND BONESPRING SHALE', '2ND BONESPRING SAND', '2ND BONESPRING', '3RD BONESPRING SHALE', '3RD BONESPRING SAND', '3RD BONESPRING', 'OTHER BONESPRING', 'WOLFCAMP XY', 'WOLFCAMP A', 'WOLFCAMP B', 'WOLFCAMP C', 'WOLFCAMP DE', 'WOLFCAMP OTHER', 'OTHER'];
 
-                function getColor(d) {
+                function getColor(d) {{
                     return d > 150 ? '#800026' :
                            d > 100 ? '#BD0026' :
                            d > 50  ? '#E31A1C' :
@@ -157,142 +97,142 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
                            d > 5   ? '#FEB24C' :
                            d > 0   ? '#FED976' :
                                     '#FFEDA0';
-                }
+                }}
 
-                function style(feature, eurpllColumn) {
-                    return {
+                function style(feature, eurpllColumn) {{
+                    return {{
                         fillColor: getColor(feature.properties[eurpllColumn]),
                         weight: 2,
                         opacity: 1,
                         color: 'white',
                         dashArray: '3',
                         fillOpacity: 0.7
-                    };
-                }
+                    }};
+                }}
 
-                function onEachFeature(feature, layer, eurpllColumn) {
-                    if (feature.properties[eurpllColumn] !== undefined) {
+                function onEachFeature(feature, layer, eurpllColumn) {{
+                    if (feature.properties[eurpllColumn] !== undefined) {{
                         layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
-                    } else {
+                    }} else {{
                         layer.bindPopup('No data available');
-                    }
-                }
+                    }}
+                }}
 
-                function updateLegend(eurpllColumn) {
+                function updateLegend(eurpllColumn) {{
                     var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
                     var grades = [0, 5, 10, 20, 50, 100, 150];
                     var labels = [];
                     var colors = ["#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"];
-                    for (var i = 0; i < grades.length; i++) {
+                    for (var i = 0; i < grades.length; i++) {{
                         labels.push(
                             '<i style="background:' + colors[i] + '"></i> ' +
                             grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
                         );
-                    }
+                    }}
                     legend.html(labels.join('<br>'));
-                }
+                }}
 
-                function updateMap() {
+                function updateMap() {{
                     var selectedShapefile = document.getElementById('shapefile-select').value;
                     var selectedEURPLL = document.getElementById('eurpll-select').value;
                     var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
                     var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
                     var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
-                    if (selectedIntervals.includes("All")) {
+                    if (selectedIntervals.includes("All")) {{
                         selectedIntervals = intervals;
-                    }
-                    if (selectedPLLIntervals.includes("All")) {
+                    }}
+                    if (selectedPLLIntervals.includes("All")) {{
                         selectedPLLIntervals = pll_intervals;
-                    }
-                    if (selectedVintages.includes("All")) {
+                    }}
+                    if (selectedVintages.includes("All")) {{
                         selectedVintages = vintages;
-                    }
+                    }}
 
                     fetch(selectedShapefile)
                         .then(response => response.json())
-                        .then(data => {
+                        .then(data => {{
                             var filteredData = data.features.filter(feature => (
                                 selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
                                 selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
                                 selectedVintages.includes(feature.properties.FirstProdYear)
                             ));
 
-                            var townshipAverages = {};
+                            var townshipAverages = {{}};
 
-                            filteredData.forEach(feature => {
+                            filteredData.forEach(feature => {{
                                 const township = feature.properties.index_right;
-                                if (!townshipAverages[township]) {
-                                    townshipAverages[township] = { sum: 0, count: 0 };
-                                }
+                                if (!townshipAverages[township]) {{
+                                    townshipAverages[township] = {{ sum: 0, count: 0 }};
+                                }}
                                 townshipAverages[township].sum += feature.properties[selectedEURPLL];
                                 townshipAverages[township].count += 1;
-                            });
+                            }});
 
-                            Object.keys(townshipAverages).forEach(township => {
+                            Object.keys(townshipAverages).forEach(township => {{
                                 townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
-                            });
+                            }});
 
-                            data.features.forEach(feature => {
+                            data.features.forEach(feature => {{
                                 const township = feature.properties.index_right;
                                 feature.properties.average = townshipAverages[township] ? townshipAverages[township].average : 0;
-                            });
+                            }});
 
-                            if (currentLayer) {
+                            if (currentLayer) {{
                                 map.removeLayer(currentLayer);
-                            }
+                            }}
 
-                            currentLayer = L.geoJSON(data, {
-                                style: function(feature) {
+                            currentLayer = L.geoJSON(data, {{
+                                style: function(feature) {{
                                     return style(feature, 'average');
-                                },
-                                onEachFeature: function(feature, layer) {
+                                }},
+                                onEachFeature: function(feature, layer) {{
                                     return onEachFeature(feature, layer, 'average');
-                                }
-                            }).addTo(map);
+                                }}
+                            }}).addTo(map);
 
                             updateLegend('average');
-                        })
-                        .catch(error => {
+                        }})
+                        .catch(error => {{
                             console.error('Error loading GeoJSON data:', error);
                             alert('Error loading data. Please check your selections and try again.');
-                        });
-                }
+                        }});
+                }}
 
-                function populateSelectOptions() {
+                function populateSelectOptions() {{
                     const eurpllSelect = document.getElementById('eurpll-select');
                     const intervalsSelect = document.getElementById('intervals-select');
                     const pllintervalsSelect = document.getElementById('pllintervals-select');
                     const vintagesSelect = document.getElementById('vintages-select');
 
-                    columns.forEach(month => {
+                    columns.forEach(month => {{
                         const option = document.createElement('option');
-                        option.value = `avg_${month}_months`;
-                        option.text = `${month} Months`;
+                        option.value = `avg_{month}_months`;
+                        option.text = `{month} Months`;
                         eurpllSelect.appendChild(option);
-                    });
+                    }});
 
-                    intervals.forEach(interval => {
+                    intervals.forEach(interval => {{
                         const option = document.createElement('option');
                         option.value = interval;
                         option.text = interval;
                         intervalsSelect.appendChild(option);
-                    });
+                    }});
 
-                    pll_intervals.forEach(interval => {
+                    pll_intervals.forEach(interval => {{
                         const option = document.createElement('option');
                         option.value = interval;
                         option.text = interval;
                         pllintervalsSelect.appendChild(option);
-                    });
+                    }});
 
-                    vintages.forEach(vintage => {
+                    vintages.forEach(vintage => {{
                         const option = document.createElement('option');
                         option.value = vintage;
                         option.text = vintage;
                         vintagesSelect.appendChild(option);
-                    });
-                }
+                    }});
+                }}
 
                 // Populate select options and set event listeners
                 populateSelectOptions();
@@ -305,7 +245,7 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
 
                 // Initialize the map with the default settings
                 updateMap();
-            });
+            }});
         </script>
     </body>
     </html>
