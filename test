@@ -155,24 +155,39 @@
                             selectedVintages.includes(feature.properties.FirstProdYear)
                         ));
 
-                        var geojson = {
-                            type: 'FeatureCollection',
-                            features: filteredData
-                        };
+                        var townshipAverages = {};
+
+                        filteredData.forEach(feature => {
+                            const township = feature.properties.index_right;
+                            if (!townshipAverages[township]) {
+                                townshipAverages[township] = { sum: 0, count: 0 };
+                            }
+                            townshipAverages[township].sum += feature.properties[selectedEURPLL];
+                            townshipAverages[township].count += 1;
+                        });
+
+                        Object.keys(townshipAverages).forEach(township => {
+                            townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
+                        });
+
+                        data.features.forEach(feature => {
+                            const township = feature.properties.index_right;
+                            feature.properties.average = townshipAverages[township] ? townshipAverages[township].average : 0;
+                        });
 
                         if (currentLayer) {
                             map.removeLayer(currentLayer);
                         }
-                        currentLayer = L.geoJSON(geojson, {
+                        currentLayer = L.geoJSON(data, {
                             style: function(feature) {
-                                return style(feature, selectedEURPLL);
+                                return style(feature, 'average');
                             },
                             onEachFeature: function(feature, layer) {
-                                return onEachFeature(feature, layer, selectedEURPLL);
+                                return onEachFeature(feature, layer, 'average');
                             }
                         }).addTo(map);
 
-                        updateLegend(selectedEURPLL);
+                        updateLegend('average');
                     })
                     .catch(error => {
                         console.error('Error loading GeoJSON data:', error);
@@ -188,7 +203,7 @@
 
                 columns.forEach(month => {
                     const option = document.createElement('option');
-                    option.value = `avg_${month}_months`;
+                    option.value = `EUR/PLL (BBL/FT) ${month} Months`;
                     option.text = `${month} Months`;
                     eurpllSelect.appendChild(option);
                 });
