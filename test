@@ -214,12 +214,15 @@ def generate_html_template(mean_latitude, mean_longitude, geojson1, geojson2):
                 var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
                 var geojsonData = selectedShapefile === 'geojson1' ? geojson1 : geojson2;
-                var filteredFeatures = geojsonData.features.filter(feature => {{
+
+                var filteredFeatures = geojsonData.features.filter(feature => {
                     var properties = feature.properties;
-                    return (selectedIntervals.length === 0 || selectedIntervals.includes(properties.MyIntervalPlus)) &&
-                           (selectedPLLIntervals.length === 0 || selectedPLLIntervals.includes(properties.MyPerfInterval)) &&
-                           (selectedVintages.length === 0 || selectedVintages.includes(properties.FirstProdYear));
-                }});
+                    var intervalCheck = selectedIntervals.length === 0 || selectedIntervals.includes(properties.MyIntervalPlus);
+                    var pllIntervalCheck = selectedPLLIntervals.length === 0 || selectedPLLIntervals.includes(properties.MyPerfInterval);
+                    var vintageCheck = selectedVintages.length === 0 || selectedVintages.includes(properties.FirstProdYear);
+
+                    return intervalCheck && pllIntervalCheck && vintageCheck;
+                });
 
                 if (currentLayer) {{
                     map.removeLayer(currentLayer);
