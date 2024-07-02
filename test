@@ -72,7 +72,7 @@
     <div class="legend" id="legend"></div>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            var map = L.map('map').setView([{{ mean_latitude }}, {{ mean_longitude }}], 10);
+            var map = L.map('map').setView([31.9686, -99.9018], 10);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 18,
@@ -176,15 +176,24 @@
                             feature.properties.average = townshipAverages[township] ? townshipAverages[township].average : 0;
                         });
 
+                        var heatmapData = data.features.map(feature => [
+                            feature.geometry.coordinates[1],
+                            feature.geometry.coordinates[0],
+                            feature.properties.average
+                        ]);
+
                         if (currentLayer) {
                             map.removeLayer(currentLayer);
                         }
-                        currentLayer = L.geoJSON(data, {
-                            style: function(feature) {
-                                return style(feature, 'average');
-                            },
-                            onEachFeature: function(feature, layer) {
-                                return onEachFeature(feature, layer, 'average');
+
+                        currentLayer = L.heatLayer(heatmapData, { 
+                            radius: 25, 
+                            blur: 15, 
+                            maxZoom: 17,
+                            gradient: {
+                                0.4: 'blue',
+                                0.65: 'lime',
+                                1: 'red'
                             }
                         }).addTo(map);
 
