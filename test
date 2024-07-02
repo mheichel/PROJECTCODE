@@ -163,14 +163,22 @@
                         if (currentLayer) {
                             map.removeLayer(currentLayer);
                         }
-                        currentLayer = L.geoJSON(geojson, {
-                            style: function(feature) {
-                                return style(feature, selectedEURPLL);
+                        currentLayer = L.choropleth(geojson, {
+                            valueProperty: selectedEURPLL,
+                            scale: ["#FFEDA0", "#800026"],
+                            steps: 7,
+                            mode: 'q',
+                            style: {
+                                color: "#fff",
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.7
                             },
                             onEachFeature: function(feature, layer) {
-                                return onEachFeature(feature, layer, selectedEURPLL);
+                                layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[selectedEURPLL].toFixed(2));
                             }
                         }).addTo(map);
+
                         updateLegend(selectedEURPLL);
                     })
                     .catch(error => {
