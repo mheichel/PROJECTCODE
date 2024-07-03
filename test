@@ -49,11 +49,14 @@ def calculate_averages(joined, shape_data):
         shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
         avg_col_names.append(avg_col_name)
     shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-    shape_data['origin'] = 'data'  # Add origin field
     return shape_data, avg_col_names
 
 shape_data1, avg_col_names1 = calculate_averages(joined1, shape_data1)
 shape_data2, avg_col_names2 = calculate_averages(joined2, shape_data2)
+
+# Add origin field
+shape_data1['origin'] = 'data'
+shape_data2['origin'] = 'data'
 
 # Save the joined data to JSON for client-side processing
 shape_data1.to_file('shape_data1.json', driver='GeoJSON')
@@ -78,7 +81,7 @@ html_template = f"""
     <title>Dynamic Map</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="leaflet.css" />
     <style>
         html, body {{
             height: 100%;
@@ -116,7 +119,7 @@ html_template = f"""
             -ms-user-select: none;
         }}
     </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="leaflet.js"></script>
     <script src="https://d3js.org/d3.v5.min.js"></script>
 </head>
 <body>
