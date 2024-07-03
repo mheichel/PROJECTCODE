@@ -57,12 +57,15 @@ shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
 shape_data1.to_file('joined1.json', driver='GeoJSON')
 shape_data2.to_file('joined2.json', driver='GeoJSON')
 
+# Convert the GeoDataFrame to JSON
+geo_data_json = geo_data.to_json()
+
 # Calculate mean latitude and longitude
 mean_latitude = wells_df['latitude'].mean()
 mean_longitude = wells_df['longitude'].mean()
 
 # Generate the HTML template
-def generate_html_template(mean_latitude, mean_longitude):
+def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -142,6 +145,7 @@ def generate_html_template(mean_latitude, mean_longitude):
                 }}).addTo(map);
 
                 var currentLayer;
+                var geoData = {geo_data_json};
 
                 function getColor(d) {{
                     return d > 150 ? '#800026' :
@@ -198,7 +202,7 @@ def generate_html_template(mean_latitude, mean_longitude):
                         .then(response => response.json())
                         .then(data => {{
                             // Filter wells within the selected townships
-                            var filteredWells = geo_data.features.filter(well => (
+                            var filteredWells = geoData.features.filter(well => (
                                 selectedIntervals.includes(well.properties.MyIntervalPlus) &&
                                 selectedPLLIntervals.includes(well.properties.MyPerfInterval) &&
                                 selectedVintages.includes(well.properties.FirstProdYear)
@@ -277,4 +281,4 @@ def generate_html_template(mean_latitude, mean_longitude):
     print("HTML file created successfully: dynamic_map.html")
 
 # Generate the HTML template
-generate_html_template(mean_latitude, mean_longitude)
+generate_html_template(mean_latitude, mean_longitude, geo_data_json)
