@@ -9,7 +9,11 @@ def plot_scatter(bin_value, uniquecolumn, columns_to_plot, df, value_range):
     for idx, (column, axis) in enumerate(zip(columns_to_plot, axes)):
         filtered_data = df[df[uniquecolumn] == bin_value][column]
         if filtered_data.count() > 0:
-            p10, p50, p90 = np.percentile(filtered_data, [10, 50, 90])
+            p10 = np.percentile(filtered_data.dropna(), 10)
+            p50 = np.percentile(filtered_data.dropna(), 50)
+            p90 = np.percentile(filtered_data.dropna(), 90)
+            
+            print(f"Column: {column}, Bin: {bin_value}, P10: {p10}, P50: {p50}, P90: {p90}")
             
             axis.scatter(['P10', 'P50', 'P90'], [p10, p50, p90], color=['blue', 'red', 'green'], s=100, zorder=5)
             axis.set_title(column, fontsize=20, color='black', pad=20)
