@@ -9,6 +9,7 @@ def load_files(file_pattern):
         df = pd.read_csv(file)
         # Normalize the dates
         df['Normalized Month'] = df.groupby('API 14')['Date'].rank(method='dense').astype(int)
+        df = df[df['Normalized Month'] <= 60]  # Truncate to first 60 months
         # Extract the month count from the file name (assumes the format 'Delaware_NM_x_Months_Combined_Monthly.csv')
         month_count = int(file.split('_')[2])
         data[month_count] = df
@@ -21,7 +22,6 @@ def calculate_percentiles(df):
     })
     percentiles.columns = ['Total Production', 'P10 Production', 'P50 Production', 'P90 Production',
                            'Total Forecast', 'P10 Forecast', 'P50 Forecast', 'P90 Forecast']
-    percentiles = percentiles.cumsum()
     return percentiles
 
 def create_production_plots(data_dict):
@@ -50,10 +50,10 @@ def create_production_plots(data_dict):
     # Cumulative production graph
     cum_graph = go.Figure()
     for col in ['P10 Production', 'P50 Production', 'P90 Production']:
-        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col))
+        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col].cumsum(), mode='lines', name=col))
     
     for col in ['P10 Forecast', 'P50 Forecast', 'P90 Forecast']:
-        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col, line=dict(dash='dot')))
+        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col].cumsum(), mode='lines', name=col, line=dict(dash='dot')))
 
     cum_graph.update_layout(title='Cumulative Production', xaxis_title='Months', yaxis_title='Cumulative Production')
 
