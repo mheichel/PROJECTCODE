@@ -9,7 +9,9 @@ def load_files(file_pattern):
     for file in files:
         df = pd.read_csv(file)
         # Normalize the dates
-        df['Normalized Month'] = df.groupby('API 14')['Date'].rank(method='dense').astype(int)
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values(by=['API 14', 'Date'])
+        df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
         df = df[df['Normalized Month'] <= 60]  # Truncate to first 60 months
         # Extract the month count from the file name (assumes the format 'Delaware_NM_x_Months_Combined_Monthly.csv')
         month_count = int(file.split('_')[2])
