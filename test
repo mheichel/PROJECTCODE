@@ -96,7 +96,7 @@ def generate_html_template(mean_latitude, mean_longitude):
         <div id="controls">
             <label for="shapefile-select">Select Shapefile:</label>
             <select id="shapefile-select" title="Select Shapefile">
-                <option value="joined1.json">First Shapefile</option>
+                <option value="joined1.json" selected>First Shapefile</option>
                 <option value="joined2.json">Second Shapefile</option>
             </select>
             <label for="eurpll-select">Select EUR/PLL:</label>
@@ -105,15 +105,15 @@ def generate_html_template(mean_latitude, mean_longitude):
             </select>
             <label for="intervals-select">Select Intervals:</label>
             <select id="intervals-select" multiple title="Select Intervals">
-                {''.join([f'<option value="{interval}">{interval}</option>' for interval in ['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER']])}
+                {''.join([f'<option value="{interval}" selected>{interval}</option>' for interval in ['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER']])}
             </select>
             <label for="pllintervals-select">Select PLL Intervals:</label>
             <select id="pllintervals-select" multiple title="Select PLL Intervals">
-                {''.join([f'<option value="{interval}">{interval}</option>' for interval in ['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT']])}
+                {''.join([f'<option value="{interval}" selected>{interval}</option>' for interval in ['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT']])}
             </select>
             <label for="vintages-select">Select Vintages:</label>
             <select id="vintages-select" multiple title="Select Vintages">
-                {''.join([f'<option value="{vintage}">{vintage}</option>' for vintage in ['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023']])}
+                {''.join([f'<option value="{vintage}" selected>{vintage}</option>' for vintage in ['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023']])}
             </select>
         </div>
         <div id="map"></div>
@@ -179,16 +179,6 @@ def generate_html_template(mean_latitude, mean_longitude):
                     var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
                     var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
                     var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
-
-                    if (selectedIntervals.length === 0) {{
-                        selectedIntervals = {json.dumps(['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER'])};
-                    }}
-                    if (selectedPLLIntervals.length === 0) {{
-                        selectedPLLIntervals = {json.dumps(['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT'])};
-                    }}
-                    if (selectedVintages.length === 0) {{
-                        selectedVintages = {json.dumps(['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023'])};
-                    }}
 
                     fetch('http://localhost:8000/' + selectedShapefile)
                         .then(response => response.json())
