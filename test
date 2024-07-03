@@ -68,36 +68,223 @@ m = folium.Map(location=[mean_latitude, mean_longitude], zoom_start=10)
 # Define colormap
 colormap = folium.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'], vmin=0, vmax=150, caption='EUR/PLL (BBL/FT)')
 
-# Add shapefile layers
-def add_shapefile_layer(shape_data, avg_col_name, layer_name):
-    folium.GeoJson(
-        shape_data,
-        style_function=lambda feature: {
-            'fillColor': colormap(feature['properties'][avg_col_name]),
-            'color': 'black',
-            'weight': 0.5,
-            'fillOpacity': 0.7
-        },
-        tooltip=folium.GeoJsonTooltip(fields=[avg_col_name], aliases=['EUR/PLL (BBL/FT):'])
-    ).add_to(folium.FeatureGroup(name=layer_name).add_to(m))
+# Save the map to an HTML file with dynamic JavaScript
+m.save('base_map.html')
 
-# Add layers for first shapefile
-for col in avg_col_names1:
-    months = col.split('_')[1]
-    add_shapefile_layer('shape_data1.json', col, f'First Shapefile - {months} Months')
+html_template = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Dynamic Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        html, body {{
+            height: 100%;
+            margin: 0;
+        }}
+        #map {{
+            width: 100%;
+            height: 100%;
+        }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+        .legend {{
+            position: absolute;
+            bottom: 30px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            line-height: 18px;
+            color: #555;
+        }}
+        .leaflet-overlay-pane svg {{
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+        }}
+    </style>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <label for="shapefile-select">Select Shapefile:</label>
+        <select id="shapefile-select" title="Select Shapefile">
+            <option value="shape_data1.json">First Shapefile</option>
+            <option value="shape_data2.json">Second Shapefile</option>
+        </select>
+        <label for="eurpll-select">Select EUR/PLL:</label>
+        <select id="eurpll-select" title="Select EUR/PLL">
+            {''.join([f'<option value="avg_{months}_months">{months} Months</option>' for months in [6,12,18,24,30,36,42,48,54,60]])}
+        </select>
+        <label for="intervals-select">Select Intervals:</label>
+        <select id="intervals-select" multiple title="Select Intervals">
+            <option value="All" selected>All</option>
+            {''.join([f'<option value="{interval}">{interval}</option>' for interval in ['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER']])}
+        </select>
+        <label for="pllintervals-select">Select PLL Intervals:</label>
+        <select id="pllintervals-select" multiple title="Select PLL Intervals">
+            <option value="All" selected>All</option>
+            {''.join([f'<option value="{interval}">{interval}</option>' for interval in ['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT']])}
+        </select>
+        <label for="vintages-select">Select Vintages:</label>
+        <select id="vintages-select" multiple title="Select Vintages">
+            <option value="All" selected>All</option>
+            {''.join([f'<option value="{vintage}">{vintage}</option>' for vintage in ['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023']])}
+        </select>
+    </div>
+    <div id="map"></div>
+    <div class="legend" id="legend"></div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {{
+            var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
-# Add layers for second shapefile
-for col in avg_col_names2:
-    months = col.split('_')[1]
-    add_shapefile_layer('shape_data2.json', col, f'Second Shapefile - {months} Months')
+            L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{
+                maxZoom: 18,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }}).addTo(map);
 
-# Add layer control
-folium.LayerControl().add_to(m)
+            var currentLayer;
 
-# Add colormap to the map
-colormap.add_to(m)
+            function getColor(d) {{
+                return d > 150 ? '#800026' :
+                       d > 100 ? '#BD0026' :
+                       d > 50  ? '#E31A1C' :
+                       d > 20  ? '#FC4E2A' :
+                       d > 10  ? '#FD8D3C' :
+                       d > 5   ? '#FEB24C' :
+                       d > 0   ? '#FED976' :
+                                '#FFEDA0';
+            }}
 
-# Save the map to an HTML file
-m.save('dynamic_map.html')
+            function style(feature, eurpllColumn) {{
+                return {{
+                    fillColor: getColor(feature.properties[eurpllColumn]),
+                    weight: 2,
+                    opacity: 1,
+                    color: 'white',
+                    dashArray: '3',
+                    fillOpacity: 0.7
+                }};
+            }}
+
+            function onEachFeature(feature, layer, eurpllColumn) {{
+                if (feature.properties[eurpllColumn] !== undefined) {{
+                    layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
+                }} else {{
+                    layer.bindPopup('No data available');
+                }}
+            }}
+
+            function updateLegend(eurpllColumn) {{
+                var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
+                var grades = [0, 5, 10, 20, 50, 100, 150];
+                var labels = [];
+                var colors = ["#FFEDA0", "#FED976", "#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#BD0026", "#800026"];
+                for (var i = 0; i < grades.length; i++) {{
+                    labels.push(
+                        '<i style="background:' + colors[i] + '"></i> ' +
+                        grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+')
+                    );
+                }}
+                legend.html(labels.join('<br>'));
+            }}
+
+            function updateMap() {{
+                var selectedShapefile = document.getElementById('shapefile-select').value;
+                var selectedEURPLL = document.getElementById('eurpll-select').value;
+                var selectedIntervals = Array.from(document.getElementById('intervals-select').selectedOptions).map(option => option.value);
+                var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
+                var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
+
+                if (selectedIntervals.includes("All")) {{
+                    selectedIntervals = {json.dumps(['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER'])};
+                }}
+                if (selectedPLLIntervals.includes("All")) {{
+                    selectedPLLIntervals = {json.dumps(['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT'])};
+                }}
+                if (selectedVintages.includes("All")) {{
+                    selectedVintages = {json.dumps(['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023'])};
+                }}
+
+                fetch(selectedShapefile)
+                    .then(response => response.json())
+                    .then(data => {{
+                        var filteredData = data.features.filter(feature => (
+                            selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
+                            selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
+                            selectedVintages.includes(feature.properties.FirstProdYear)
+                        ));
+
+                        var townshipAverages = {{}};
+
+                        filteredData.forEach(feature => {{
+                            const township = feature.properties.index_right;
+                            if (!townshipAverages[township]) {{
+                                townshipAverages[township] = {{ sum: 0, count: 0 }};
+                            }}
+                            townshipAverages[township].sum += feature.properties[selectedEURPLL];
+                            townshipAverages[township].count += 1;
+                        }});
+
+                        Object.keys(townshipAverages).forEach(township => {{
+                            townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
+                        }});
+
+                        data.features.forEach(feature => {{
+                            const township = feature.properties.index_right;
+                            feature.properties.average = townshipAverages[township] ? townshipAverages[township].average : 0;
+                        }});
+
+                        if (currentLayer) {{
+                            map.removeLayer(currentLayer);
+                        }}
+
+                        currentLayer = L.geoJSON(data, {{
+                            style: function(feature) {{
+                                return style(feature, 'average');
+                            }},
+                            onEachFeature: function(feature, layer) {{
+                                return onEachFeature(feature, layer, 'average');
+                            }}
+                        }}).addTo(map);
+
+                        updateLegend('average');
+                    }})
+                    .catch(error => {{
+                        console.error('Error loading GeoJSON data:', error);
+                        alert('Error loading data. Please check your selections and try again.');
+                    }});
+            }}
+
+            document.getElementById('shapefile-select').addEventListener('change', updateMap);
+            document.getElementById('eurpll-select').addEventListener('change', updateMap);
+            document.getElementById('intervals-select').addEventListener('change', updateMap);
+            document.getElementById('pllintervals-select').addEventListener('change', updateMap);
+            document.getElementById('vintages-select').addEventListener('change', updateMap);
+
+            // Initialize the map with the default settings
+            updateMap();
+        }});
+    </script>
+</body>
+</html>
+"""
+
+with open('dynamic_map.html', 'w') as f:
+    f.write(html_template)
 
 print("HTML file created successfully: dynamic_map.html")
