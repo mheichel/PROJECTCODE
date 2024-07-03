@@ -100,6 +100,11 @@ def generate_html_template(mean_latitude, mean_longitude, avg_col_names):
                 line-height: 18px;
                 color: #555;
             }}
+            .leaflet-overlay-pane svg {{
+                user-select: none;
+                -webkit-user-select: none;
+                -ms-user-select: none;
+            }}
         </style>
         <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
         <script src="https://d3js.org/d3.v5.min.js"></script>
