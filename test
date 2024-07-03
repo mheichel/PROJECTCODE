@@ -210,7 +210,7 @@ html_template = f"""
                 var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
                 var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
-                fetch(selectedShapefile)
+                fetch('http://localhost:8000/' + selectedShapefile)
                     .then(response => response.json())
                     .then(data => {{
                         var filteredData = data.features.filter(feature => (
