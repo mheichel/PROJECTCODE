@@ -15,19 +15,23 @@ def plot_scatter(bin_value, uniquecolumn, columns_to_plot, df, value_range):
             
             print(f"Column: {column}, Bin: {bin_value}, P10: {p10}, P50: {p50}, P90: {p90}")
             
-            axis.scatter(['P10', 'P50', 'P90'], [p10, p50, p90], color=['blue', 'red', 'green'], s=100, zorder=5)
+            x_positions = [1, 1, 1]  # All points on the same vertical line
+            y_positions = [p10, p50, p90]
+            colors = ['blue', 'red', 'green']
+            labels = ['P10', 'P50', 'P90']
+            
+            axis.scatter(x_positions, y_positions, color=colors, s=300, zorder=5)
             axis.set_title(column, fontsize=20, color='black', pad=20)
             axis.set_ylim(value_range[0], value_range[1])
-            axis.set_xlim(-0.5, 2.5)
-            axis.set_xticks([0, 1, 2])
-            axis.set_xticklabels(['P10', 'P50', 'P90'], fontsize=18, color='black')
+            axis.set_xlim(0.5, 1.5)
+            axis.set_xticks([1])
+            axis.set_xticklabels(['EUR/PLL Predictions'], fontsize=18, color='black')
             axis.tick_params(axis='y', labelsize=18, labelcolor='black')
             axis.grid(axis='y', linestyle='--', alpha=0.7, color='gray')
             
             # Adding text labels for the points
-            axis.text(0, p10, f"{p10:.2f}", fontsize=12, ha='center', va='bottom', color='blue')
-            axis.text(1, p50, f"{p50:.2f}", fontsize=12, ha='center', va='bottom', color='red')
-            axis.text(2, p90, f"{p90:.2f}", fontsize=12, ha='center', va='bottom', color='green')
+            for x, y, color, label in zip(x_positions, y_positions, colors, labels):
+                axis.text(x, y, f"{label}: {y:.2f}", fontsize=16, ha='left', va='center', color=color, weight='bold')
         else:
             print(f"No data for {column} in bin {bin_value}")
         
