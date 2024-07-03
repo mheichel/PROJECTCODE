@@ -132,6 +132,7 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
             <select id="vintages-select" multiple title="Select Vintages">
                 {''.join([f'<option value="{vintage}" selected>{vintage}</option>' for vintage in ['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023']])}
             </select>
+            <button id="update-map-button">Update Map</button>
         </div>
         <div id="map"></div>
         <div class="legend" id="legend"></div>
@@ -257,11 +258,7 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
                         }});
                 }}
 
-                document.getElementById('shapefile-select').addEventListener('change', updateMap);
-                document.getElementById('eurpll-select').addEventListener('change', updateMap);
-                document.getElementById('intervals-select').addEventListener('change', updateMap);
-                document.getElementById('pllintervals-select').addEventListener('change', updateMap);
-                document.getElementById('vintages-select').addEventListener('change', updateMap);
+                document.getElementById('update-map-button').addEventListener('click', updateMap);
 
                 // Initialize the map with the default settings
                 updateMap();
@@ -278,15 +275,3 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
 
 # Generate the HTML template
 generate_html_template(mean_latitude, mean_longitude, geo_data_json)
-
-import http.server
-import socketserver
-
-PORT = 8000
-
-Handler = http.server.SimpleHTTPRequestHandler
-
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
-    print("Serving at port", PORT)
-    httpd.serve_forever()
-
