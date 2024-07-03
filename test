@@ -33,7 +33,7 @@ shape_data1 = gpd.read_file('PLSSFirstDivision.geojson')
 shape_data1.to_crs(epsg=4326, inplace=True)
 
 shape_data2 = gpd.read_file('PLSSTownship.geojson')
-shape_data2.set_crs(epsg=4326, inplace=True)
+shape_data2.to_crs(epsg=4326, inplace=True)
 
 # Spatial join to assign points to township polygons
 joined1 = gpd.sjoin(geo_data, shape_data1, how='left', op='within')
@@ -180,6 +180,16 @@ def generate_html_template(mean_latitude, mean_longitude):
                     var selectedPLLIntervals = Array.from(document.getElementById('pllintervals-select').selectedOptions).map(option => option.value);
                     var selectedVintages = Array.from(document.getElementById('vintages-select').selectedOptions).map(option => option.value);
 
+                    if (selectedIntervals.length === 0) {{
+                        selectedIntervals = {json.dumps(['AVALON','1ST BONESPRING','2ND BONESPRING SHALE','2ND BONESPRING SAND','2ND BONESPRING','3RD BONESPRING SHALE','3RD BONESPRING SAND','3RD BONESPRING','OTHER BONESPRING','WOLFCAMP XY','WOLFCAMP A','WOLFCAMP B','WOLFCAMP C','WOLFCAMP DE','WOLFCAMP OTHER','OTHER'])};
+                    }}
+                    if (selectedPLLIntervals.length === 0) {{
+                        selectedPLLIntervals = {json.dumps(['PLL < 5000 FT','5000 FT =< PLL <= 7500 FT','7500 FT < PLL < 10000 FT','10000 FT < PLL < 12500 FT','12500 FT < PLL < 15000 FT', 'PLL > 15000 FT'])};
+                    }}
+                    if (selectedVintages.length === 0) {{
+                        selectedVintages = {json.dumps(['*Pre-2010',2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023'])};
+                    }}
+
                     fetch('http://localhost:8000/' + selectedShapefile)
                         .then(response => response.json())
                         .then(data => {{
@@ -188,6 +198,8 @@ def generate_html_template(mean_latitude, mean_longitude):
                                 selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
                                 selectedVintages.includes(feature.properties.FirstProdYear)
                             ));
+
+                            console.log("Filtered Data: ", filteredData);
 
                             var townshipAverages = {{}};
 
@@ -200,9 +212,13 @@ def generate_html_template(mean_latitude, mean_longitude):
                                 townshipAverages[township].count += 1;
                             }});
 
+                            console.log("Township Averages Before Calculation: ", townshipAverages);
+
                             Object.keys(townshipAverages).forEach(township => {{
                                 townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
                             }});
+
+                            console.log("Township Averages After Calculation: ", townshipAverages);
 
                             data.features.forEach(feature => {{
                                 const township = feature.properties.index_right;
