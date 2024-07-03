@@ -39,9 +39,23 @@ shape_data2.to_crs(epsg=4326, inplace=True)
 joined1 = gpd.sjoin(geo_data, shape_data1, how='left', op='within')
 joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
 
+# Calculate averages for each township polygon
+avg_col_names = []
+
+for col in columns[3:13]:
+    months = col.split()[2]
+    avg_col_name = f'avg_{months}_months'
+    shape_data1[avg_col_name] = joined1.groupby('index_right')[col].mean()
+    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
+    avg_col_names.append(avg_col_name)
+
+# Drop sections where all the average values are 0 for the first shapefile
+shape_data1 = shape_data1[(shape_data1[avg_col_names] > 0).any(axis=1)]
+shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
+
 # Save the joined data to JSON for client-side processing
-joined1.to_file('joined1.json', driver='GeoJSON')
-joined2.to_file('joined2.json', driver='GeoJSON')
+shape_data1.to_file('joined1.json', driver='GeoJSON')
+shape_data2.to_file('joined2.json', driver='GeoJSON')
 
 # Calculate mean latitude and longitude
 mean_latitude = wells_df['latitude'].mean()
@@ -68,7 +82,7 @@ def generate_html_template(mean_latitude, mean_longitude):
             }}
             #controls {{
                 position: absolute;
-                top: px;
+                top: 10px;
                 left: 50px;
                 z-index: 1000;
                 background: white;
@@ -101,7 +115,7 @@ def generate_html_template(mean_latitude, mean_longitude):
             </select>
             <label for="eurpll-select">Select EUR/PLL:</label>
             <select id="eurpll-select" title="Select EUR/PLL">
-                {''.join([f'<option value="EUR/PLL (BBL/FT) {months} Months">{months} Months</option>' for months in [6,12,18,24,30,36,42,48,54,60]])}
+                {''.join([f'<option value="avg_{months}_months">{months} Months</option>' for months in [6,12,18,24,30,36,42,48,54,60]])}
             </select>
             <label for="intervals-select">Select Intervals:</label>
             <select id="intervals-select" multiple title="Select Intervals">
@@ -183,23 +197,22 @@ def generate_html_template(mean_latitude, mean_longitude):
                     fetch('http://localhost:8000/' + selectedShapefile)
                         .then(response => response.json())
                         .then(data => {{
-                            var filteredData = data.features.filter(feature => (
-                                selectedIntervals.includes(feature.properties.MyIntervalPlus) &&
-                                selectedPLLIntervals.includes(feature.properties.MyPerfInterval) &&
-                                selectedVintages.includes(feature.properties.FirstProdYear)
+                            // Filter wells within the selected townships
+                            var filteredWells = geo_data.features.filter(well => (
+                                selectedIntervals.includes(well.properties.MyIntervalPlus) &&
+                                selectedPLLIntervals.includes(well.properties.MyPerfInterval) &&
+                                selectedVintages.includes(well.properties.FirstProdYear)
                             ));
-
-                            console.log("Filtered Data: ", filteredData);
 
                             var townshipAverages = {{}};
 
-                            filteredData.forEach(feature => {{
-                                const township = feature.properties.index_right;
+                            filteredWells.forEach(well => {{
+                                const township = well.properties.index_right;
                                 if (!townshipAverages[township]) {{
                                     townshipAverages[township] = {{ sum: 0, count: 0 }};
                                 }}
-                                if (feature.properties[selectedEURPLL] !== undefined) {{
-                                    townshipAverages[township].sum += feature.properties[selectedEURPLL];
+                                if (well.properties[selectedEURPLL] !== undefined) {{
+                                    townshipAverages[township].sum += well.properties[selectedEURPLL];
                                     townshipAverages[township].count += 1;
                                 }}
                             }});
