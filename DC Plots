@@ -51,23 +51,23 @@ def calculate_p90(data_dict):
 def plot_production(data_dict, p90_api):
     scatter = go.Figure()
 
+    # Plot production data only for the 6-month file
+    df = data_dict[6]
     for api in p90_api:
-        for month in sorted(data_dict.keys()):
-            df = data_dict[month]
-            well_data = df[df['API 14'] == api]
-            scatter.add_trace(go.Scatter(
-                x=well_data['Normalized Month'], 
-                y=well_data['Oil Production (BBL/M)'],
-                mode='lines',
-                name=f'P90 Production - API {api} (Month {month})'
-            ))
-            scatter.add_trace(go.Scatter(
-                x=well_data['Normalized Month'], 
-                y=well_data['Oil Forecast (BBL/M)'],
-                mode='lines',
-                line=dict(dash='dot'),
-                name=f'P90 Forecast - API {api} (Month {month})'
-            ))
+        well_data = df[df['API 14'] == api]
+        scatter.add_trace(go.Scatter(
+            x=well_data['Normalized Month'], 
+            y=well_data['Oil Production (BBL/M)'],
+            mode='lines',
+            name=f'P90 Production - API {api}'
+        ))
+        scatter.add_trace(go.Scatter(
+            x=well_data['Normalized Month'], 
+            y=well_data['Oil Forecast (BBL/M)'],
+            mode='lines',
+            line=dict(dash='dot'),
+            name=f'P90 Forecast - API {api}'
+        ))
 
     scatter.update_layout(title='Production Data', xaxis_title='Normalized Month', yaxis_title='Production')
     
