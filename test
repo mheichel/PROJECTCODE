@@ -3,8 +3,7 @@ import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
 import folium
-from folium.plugins import HeatMap
-import json
+from IPython.display import display, IFrame
 
 # Load the wells_df
 columns = [
@@ -271,7 +270,9 @@ html_template = f"""
 </html>
 """
 
+# Write the HTML content to a file
 with open('dynamic_map.html', 'w') as f:
     f.write(html_template)
 
-print("HTML file created successfully: dynamic_map.html")
+# Display the map in the Jupyter notebook
+display(IFrame('dynamic_map.html', width=800, height=600))
