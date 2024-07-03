@@ -208,14 +208,20 @@ def generate_html_template(mean_latitude, mean_longitude):
                                 if (!townshipAverages[township]) {{
                                     townshipAverages[township] = {{ sum: 0, count: 0 }};
                                 }}
-                                townshipAverages[township].sum += feature.properties[selectedEURPLL];
-                                townshipAverages[township].count += 1;
+                                if (feature.properties[selectedEURPLL] !== undefined) {{
+                                    townshipAverages[township].sum += feature.properties[selectedEURPLL];
+                                    townshipAverages[township].count += 1;
+                                }}
                             }});
 
                             console.log("Township Averages Before Calculation: ", townshipAverages);
 
                             Object.keys(townshipAverages).forEach(township => {{
-                                townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
+                                if (townshipAverages[township].count > 0) {{
+                                    townshipAverages[township].average = townshipAverages[township].sum / townshipAverages[township].count;
+                                }} else {{
+                                    townshipAverages[township].average = 0;
+                                }}
                             }});
 
                             console.log("Township Averages After Calculation: ", townshipAverages);
@@ -224,6 +230,8 @@ def generate_html_template(mean_latitude, mean_longitude):
                                 const township = feature.properties.index_right;
                                 feature.properties.average = townshipAverages[township] ? townshipAverages[township].average : 0;
                             }});
+
+                            console.log("Data Features with Averages: ", data.features);
 
                             if (currentLayer) {{
                                 map.removeLayer(currentLayer);
