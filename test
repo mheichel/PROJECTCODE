@@ -49,6 +49,7 @@ def calculate_averages(joined, shape_data):
         shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
         avg_col_names.append(avg_col_name)
     shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
+    shape_data['origin'] = 'data'  # Add origin field
     return shape_data, avg_col_names
 
 shape_data1, avg_col_names1 = calculate_averages(joined1, shape_data1)
