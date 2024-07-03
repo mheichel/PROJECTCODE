@@ -1,0 +1,63 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sb
+from matplotlib.backends.backend_pdf import PdfPages
+
+def plot_scatter(bin_value, uniquecolumn, columns_to_plot, df, value_range):
+    fig, axes = plt.subplots(ncols=len(columns_to_plot), figsize=(60, 30), facecolor='lightgray')
+    for idx, (column, axis) in enumerate(zip(columns_to_plot, axes)):
+        filtered_data = df[df[uniquecolumn] == bin_value][column]
+        if filtered_data.count() > 0:
+            p10, p50, p90 = np.percentile(filtered_data, [10, 50, 90])
+            
+            axis.scatter(['P10', 'P50', 'P90'], [p10, p50, p90], color=['blue', 'red', 'green'], s=100, zorder=5)
+            axis.set_title(column, fontsize=20, color='black', pad=20)
+            axis.set_ylim(value_range[0], value_range[1])
+            axis.set_xlim(-0.5, 2.5)
+            axis.set_xticks([0, 1, 2])
+            axis.set_xticklabels(['P10', 'P50', 'P90'], fontsize=18, color='black')
+            axis.tick_params(axis='y', labelsize=18, labelcolor='black')
+            axis.grid(axis='y', linestyle='--', alpha=0.7, color='gray')
+            
+            # Adding text labels for the points
+            axis.text(0, p10, f"{p10:.2f}", fontsize=12, ha='center', va='bottom', color='blue')
+            axis.text(1, p50, f"{p50:.2f}", fontsize=12, ha='center', va='bottom', color='red')
+            axis.text(2, p90, f"{p90:.2f}", fontsize=12, ha='center', va='bottom', color='green')
+        else:
+            print(f"No data for {column} in bin {bin_value}")
+        
+        # Add space between plots
+        if idx < len(columns_to_plot) - 1:
+            axis.spines['right'].set_visible(False)
+            axes[idx + 1].spines['left'].set_visible(False)
+            axis.set_xlim(axis.get_xlim()[0] - 0.5, axis.get_xlim()[1] + 0.5)
+    return fig
+
+def ScatterPlot(uniquebin, uniquecolumn, columns_to_plot, df, pdf_filename, value_range=(0, 180)):
+    """
+    Generates scatter plots for different bins of data.
+    
+    Parameters:
+        uniquebin (list): List of unique bin values.
+        uniquecolumn (str): Column name to filter bins.
+        columns_to_plot (list): List of column names to plot.
+        df (DataFrame): DataFrame containing the data.
+        pdf_filename (str): Filename for the output PDF.
+        value_range (tuple): Y-axis range for the plots.
+    """
+    with PdfPages(pdf_filename) as pdf:
+        for bin_value in uniquebin:
+            try:
+                fig = plot_scatter(bin_value, uniquecolumn, columns_to_plot, df, value_range)
+                plt.suptitle(f"{bin_value} ({len(df[df[uniquecolumn] == bin_value])} Wells)", fontsize=30, color='black')
+                sb.set_theme(style='darkgrid')
+                sb.despine(left=True)
+                plt.subplots_adjust(wspace=0.5)  # Add space between plots
+                pdf.savefig()
+                plt.close()
+            except Exception as e:
+                print(f"Error processing bin {bin_value}: {e}")
+
+# Example usage
+# ScatterPlot(uniquebin, uniquecolumn, columns_to_plot, df, 'output_scatter.pdf')
