@@ -39,64 +39,61 @@ def calculate_percentiles(data_dict):
         cum_6 = data_dict[6].loc[data_dict[6]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
         cum_60 = data_dict[60].loc[data_dict[60]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
         if cum_60 != 0:
-            differences.append((api, cum_60 - cum_6))
+            abs_diff = abs(cum_60 - cum_6)
+            differences.append((api, abs_diff))
     
-    df_differences = pd.DataFrame(differences, columns=['API 14', 'Difference'])
-    p10_api = df_differences.nsmallest(int(len(df_differences)*0.1), 'Difference')['API 14']
-    p50_api = df_differences.iloc[int(len(df_differences)*0.5):int(len(df_differences)*0.5)+1]['API 14']
-    p90_api = df_differences.nlargest(int(len(df_differences)*0.1), 'Difference')['API 14']
+    df_differences = pd.DataFrame(differences, columns=['API 14', 'Abs Difference'])
+    p90_api = df_differences.nlargest(int(len(df_differences) * 0.1), 'Abs Difference')['API 14']
     
-    return p10_api.tolist(), p50_api.tolist(), p90_api.tolist()
+    return p90_api.tolist()
 
-def plot_production(data_dict, p10_api, p50_api, p90_api):
+def plot_production(data_dict, p90_api):
     scatter = go.Figure()
 
-    for api_list, percentile in zip([p10_api, p50_api, p90_api], ['P10', 'P50', 'P90']):
-        for api in api_list:
-            for month in sorted(data_dict.keys()):
-                df = data_dict[month]
-                well_data = df[df['API 14'] == api]
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'], 
-                    y=well_data['Oil Production (BBL/M)'],
-                    mode='lines',
-                    name=f'{percentile} Production - API {api} (Month {month})'
-                ))
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'], 
-                    y=well_data['Oil Forecast (BBL/M)'],
-                    mode='lines',
-                    line=dict(dash='dot'),
-                    name=f'{percentile} Forecast - API {api} (Month {month})'
-                ))
+    for api in p90_api:
+        for month in sorted(data_dict.keys()):
+            df = data_dict[month]
+            well_data = df[df['API 14'] == api]
+            scatter.add_trace(go.Scatter(
+                x=well_data['Normalized Month'], 
+                y=well_data['Oil Production (BBL/M)'],
+                mode='lines',
+                name=f'P90 Production - API {api} (Month {month})'
+            ))
+            scatter.add_trace(go.Scatter(
+                x=well_data['Normalized Month'], 
+                y=well_data['Oil Forecast (BBL/M)'],
+                mode='lines',
+                line=dict(dash='dot'),
+                name=f'P90 Forecast - API {api} (Month {month})'
+            ))
 
     scatter.update_layout(title='Production Data', xaxis_title='Normalized Month', yaxis_title='Production')
     
     scatter.write_html('scatter.html')
 
-def plot_cumulative_production(data_dict, p10_api, p50_api, p90_api):
+def plot_cumulative_production(data_dict, p90_api):
     cum_graph = go.Figure()
 
-    for api_list, percentile in zip([p10_api, p50_api, p90_api], ['P10', 'P50', 'P90']):
-        for api in api_list:
-            for month in sorted(data_dict.keys()):
-                df = data_dict[month]
-                well_data = df[df['API 14'] == api]
-                well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
-                well_data['Cumulative Forecast'] = well_data['Oil Forecast (BBL/M)'].cumsum()
-                cum_graph.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'], 
-                    y=well_data['Cumulative Production'],
-                    mode='lines',
-                    name=f'{percentile} Cumulative Production - API {api} (Month {month})'
-                ))
-                cum_graph.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'], 
-                    y=well_data['Cumulative Forecast'],
-                    mode='lines',
-                    line=dict(dash='dot'),
-                    name=f'{percentile} Cumulative Forecast - API {api} (Month {month})'
-                ))
+    for api in p90_api:
+        for month in sorted(data_dict.keys()):
+            df = data_dict[month]
+            well_data = df[df['API 14'] == api]
+            well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
+            well_data['Cumulative Forecast'] = well_data['Oil Forecast (BBL/M)'].cumsum()
+            cum_graph.add_trace(go.Scatter(
+                x=well_data['Normalized Month'], 
+                y=well_data['Cumulative Production'],
+                mode='lines',
+                name=f'P90 Cumulative Production - API {api} (Month {month})'
+            ))
+            cum_graph.add_trace(go.Scatter(
+                x=well_data['Normalized Month'], 
+                y=well_data['Cumulative Forecast'],
+                mode='lines',
+                line=dict(dash='dot'),
+                name=f'P90 Cumulative Forecast - API {api} (Month {month})'
+            ))
 
     cum_graph.update_layout(title='Cumulative Production', xaxis_title='Normalized Month', yaxis_title='Cumulative Production')
     
@@ -113,11 +110,11 @@ for month in data_dict:
 # Filter wells based on criteria
 filtered_data_dict = filter_wells(data_dict)
 
-# Calculate P10, P50, P90
-p10_api, p50_api, p90_api = calculate_percentiles(filtered_data_dict)
+# Calculate P90
+p90_api = calculate_percentiles(filtered_data_dict)
 
 # Plot production data
-plot_production(filtered_data_dict, p10_api, p50_api, p90_api)
+plot_production(filtered_data_dict, p90_api)
 
 # Plot cumulative production data
-plot_cumulative_production(filtered_data_dict, p10_api, p50_api, p90_api)
+plot_cumulative_production(filtered_data_dict, p90_api)
