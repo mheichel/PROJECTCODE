@@ -14,6 +14,16 @@ def load_files(file_pattern):
         data[month_count] = df
     return data
 
+def calculate_percentiles(df):
+    percentiles = df.groupby('Normalized Month').agg({
+        'Oil Production (BBL/M)': ['sum', lambda x: x.quantile(0.1), lambda x: x.median(), lambda x: x.quantile(0.9)],
+        'Oil Forecast (BBL/M)': ['sum', lambda x: x.quantile(0.1), lambda x: x.median(), lambda x: x.quantile(0.9)]
+    })
+    percentiles.columns = ['Total Production', 'P10 Production', 'P50 Production', 'P90 Production',
+                           'Total Forecast', 'P10 Forecast', 'P50 Forecast', 'P90 Forecast']
+    percentiles = percentiles.cumsum()
+    return percentiles
+
 def create_production_plots(data_dict):
     # Initialize empty DataFrame to aggregate data
     aggregated_data = pd.DataFrame()
@@ -24,31 +34,27 @@ def create_production_plots(data_dict):
         df['Month'] = key
         aggregated_data = pd.concat([aggregated_data, df], ignore_index=True)
 
-    # Extract months and summed production/forecasted data
-    months = aggregated_data['Month'].unique()
-    summed_production_cols = [col for col in aggregated_data.columns if 'Oil Production' in col]
-    forecasted_data_cols = [col for col in aggregated_data.columns if 'Oil Forecast' in col]
+    # Calculate percentiles
+    percentiles = calculate_percentiles(aggregated_data)
 
-    # Scatter chart
+    # Plot production data
     scatter = go.Figure()
-    for col in summed_production_cols:
-        for month in months:
-            monthly_data = aggregated_data[aggregated_data['Month'] == month]
-            scatter.add_trace(go.Scatter(x=monthly_data['Normalized Month'], y=monthly_data[col], mode='lines', name=f'Summed Production {month}'))
+    for col in ['P10 Production', 'P50 Production', 'P90 Production']:
+        scatter.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col))
 
-    for col in forecasted_data_cols:
-        for month in months:
-            monthly_data = aggregated_data[aggregated_data['Month'] == month]
-            scatter.add_trace(go.Scatter(x=monthly_data['Normalized Month'], y=monthly_data[col], mode='lines', name=f'Forecasted Data {month}', line=dict(dash='dot')))
-    
+    for col in ['P10 Forecast', 'P50 Forecast', 'P90 Forecast']:
+        scatter.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col, line=dict(dash='dot')))
+
     scatter.update_layout(title='Production Data', xaxis_title='Normalized Month', yaxis_title='Production', yaxis_type='log')
 
     # Cumulative production graph
     cum_graph = go.Figure()
-    for col in summed_production_cols:
-        cumulative_production = aggregated_data.groupby('Month')[col].sum().cumsum()
-        cum_graph.add_trace(go.Scatter(x=cumulative_production.index, y=cumulative_production, mode='lines', name=f'Cumulative Production {col}'))
+    for col in ['P10 Production', 'P50 Production', 'P90 Production']:
+        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col))
     
+    for col in ['P10 Forecast', 'P50 Forecast', 'P90 Forecast']:
+        cum_graph.add_trace(go.Scatter(x=percentiles.index, y=percentiles[col], mode='lines', name=col, line=dict(dash='dot')))
+
     cum_graph.update_layout(title='Cumulative Production', xaxis_title='Months', yaxis_title='Cumulative Production')
 
     # Save to HTML
