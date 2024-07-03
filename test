@@ -68,7 +68,7 @@ def generate_html_template(mean_latitude, mean_longitude):
             }}
             #controls {{
                 position: absolute;
-                top: 10px;
+                top: px;
                 left: 50px;
                 z-index: 1000;
                 background: white;
@@ -101,7 +101,7 @@ def generate_html_template(mean_latitude, mean_longitude):
             </select>
             <label for="eurpll-select">Select EUR/PLL:</label>
             <select id="eurpll-select" title="Select EUR/PLL">
-                {''.join([f'<option value="avg_{months}_months">{months} Months</option>' for months in [6,12,18,24,30,36,42,48,54,60]])}
+                {''.join([f'<option value="EUR/PLL (BBL/FT) {months} Months">{months} Months</option>' for months in [6,12,18,24,30,36,42,48,54,60]])}
             </select>
             <label for="intervals-select">Select Intervals:</label>
             <select id="intervals-select" multiple title="Select Intervals">
