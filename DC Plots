@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.graph_objs as go
+import plotly.subplots as sp
 import glob
 
 def load_files(file_pattern):
@@ -33,7 +34,7 @@ def filter_wells(data_dict):
         filtered_data[month] = df
     return filtered_data
 
-def calculate_percentiles(data_dict):
+def calculate_p90(data_dict):
     differences = []
     for api in data_dict[60]['API 14'].unique():
         cum_6 = data_dict[6].loc[data_dict[6]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
@@ -70,7 +71,7 @@ def plot_production(data_dict, p90_api):
 
     scatter.update_layout(title='Production Data', xaxis_title='Normalized Month', yaxis_title='Production')
     
-    scatter.write_html('scatter.html')
+    return scatter
 
 def plot_cumulative_production(data_dict, p90_api):
     cum_graph = go.Figure()
@@ -97,7 +98,27 @@ def plot_cumulative_production(data_dict, p90_api):
 
     cum_graph.update_layout(title='Cumulative Production', xaxis_title='Normalized Month', yaxis_title='Cumulative Production')
     
-    cum_graph.write_html('cumulative.html')
+    return cum_graph
+
+def combine_plots(scatter, cum_graph):
+    fig = sp.make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=('Production Data', 'Cumulative Production'))
+
+    # Add traces from scatter plot
+    for trace in scatter.data:
+        fig.add_trace(trace, row=1, col=1)
+
+    # Add traces from cumulative plot
+    for trace in cum_graph.data:
+        fig.add_trace(trace, row=2, col=1)
+
+    fig.update_layout(
+        height=800,
+        title_text="Production Data and Cumulative Production",
+        xaxis_title='Normalized Month',
+        yaxis_title='Production / Cumulative Production'
+    )
+
+    fig.write_html('combined.html')
 
 # Main execution
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
@@ -111,10 +132,13 @@ for month in data_dict:
 filtered_data_dict = filter_wells(data_dict)
 
 # Calculate P90
-p90_api = calculate_percentiles(filtered_data_dict)
+p90_api = calculate_p90(filtered_data_dict)
 
 # Plot production data
-plot_production(filtered_data_dict, p90_api)
+scatter = plot_production(filtered_data_dict, p90_api)
 
 # Plot cumulative production data
-plot_cumulative_production(filtered_data_dict, p90_api)
+cum_graph = plot_cumulative_production(filtered_data_dict, p90_api)
+
+# Combine and save the plots
+combine_plots(scatter, cum_graph)
