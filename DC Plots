@@ -1,0 +1,46 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import glob
+import os
+
+# Load CSV files into a dictionary
+def load_files(file_pattern):
+    files = glob.glob(file_pattern)
+    data = {}
+    for file in files:
+        df = pd.read_csv(file)
+        # Normalize the dates
+        df['Normalized Month'] = df.groupby('API 14')['Date'].rank(method='dense').astype(int)
+        data[os.path.basename(file)] = df
+    return data
+
+# Plot data
+def plot_data(data):
+    for file_name, df in data.items():
+        plt.figure(figsize=(12, 6))
+        
+        # Plot Oil Production
+        plt.subplot(1, 2, 1)
+        for api, group in df.groupby('API 14'):
+            plt.plot(group['Normalized Month'], group['Oil Production (BBL/M)'], label=f'API {api}')
+        plt.title(f'Oil Production - {file_name}')
+        plt.xlabel('Normalized Month')
+        plt.ylabel('Oil Production (BBL/M)')
+        plt.legend()
+        
+        # Plot Oil Forecast
+        plt.subplot(1, 2, 2)
+        for api, group in df.groupby('API 14'):
+            plt.plot(group['Normalized Month'], group['Oil Forecast (BBL/M)'], label=f'API {api}')
+        plt.title(f'Oil Forecast - {file_name}')
+        plt.xlabel('Normalized Month')
+        plt.ylabel('Oil Forecast (BBL/M)')
+        plt.legend()
+        
+        plt.tight_layout()
+        plt.show()
+
+# Main execution
+file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
+data = load_files(file_pattern)
+plot_data(data)
