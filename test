@@ -158,9 +158,9 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
                                     '#FFEDA0';
                 }}
 
-                function style(feature, eurpllColumn) {{
+                function style(feature) {{
                     return {{
-                        fillColor: getColor(feature.properties[eurpllColumn]),
+                        fillColor: getColor(feature.properties.average),
                         weight: 2,
                         opacity: 1,
                         color: 'white',
@@ -169,15 +169,15 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
                     }};
                 }}
 
-                function onEachFeature(feature, layer, eurpllColumn) {{
-                    if (feature.properties[eurpllColumn] !== undefined) {{
-                        layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties[eurpllColumn].toFixed(2));
+                function onEachFeature(feature, layer) {{
+                    if (feature.properties.average !== undefined) {{
+                        layer.bindPopup('EUR/PLL (BBL/FT): ' + feature.properties.average.toFixed(2));
                     }} else {{
                         layer.bindPopup('No data available');
                     }}
                 }}
 
-                function updateLegend(eurpllColumn) {{
+                function updateLegend() {{
                     var legend = d3.select('#legend').html('<h4>EUR/PLL (BBL/FT)</h4>');
                     var grades = [0, 5, 10, 20, 50, 100, 150];
                     var labels = [];
@@ -245,15 +245,11 @@ def generate_html_template(mean_latitude, mean_longitude, geo_data_json):
                             }}
 
                             currentLayer = L.geoJSON(data, {{
-                                style: function(feature) {{
-                                    return style(feature, 'average');
-                                }},
-                                onEachFeature: function(feature, layer) {{
-                                    return onEachFeature(feature, layer, 'average');
-                                }}
+                                style: style,
+                                onEachFeature: onEachFeature
                             }}).addTo(map);
 
-                            updateLegend('average');
+                            updateLegend();
                         }})
                         .catch(error => {{
                             console.error('Error loading GeoJSON data:', error);
