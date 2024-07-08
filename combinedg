@@ -5,11 +5,10 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
-import json
 from flask import Flask, request, jsonify
 from flask_ngrok import run_with_ngrok
 
-# First snippet functions
+# Define functions
 def load_files(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
@@ -29,28 +28,13 @@ def calculate_cumulative(df):
 
 def filter_wells(data_dict):
     filtered_data = {}
-    for month, df in data_dict.items():
-        if month == 60:
-            api_60 = df['API 14'].unique()
-        if month == 6:
-            api_6 = df['API 14'].unique()
+    api_60 = data_dict[60]['API 14'].unique() if 60 in data_dict else []
+    api_6 = data_dict[6]['API 14'].unique() if 6 in data_dict else []
     valid_apis = set(api_6).intersection(api_60)
     for month, df in data_dict.items():
         df = df[df['API 14'].isin(valid_apis)]
         filtered_data[month] = df
     return filtered_data
-
-def calculate_p90(data_dict):
-    differences = []
-    for api in data_dict[60]['API 14'].unique():
-        cum_6 = data_dict[6].loc[data_dict[6]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
-        cum_60 = data_dict[60].loc[data_dict[60]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
-        if cum_60 != 0:
-            abs_diff = abs(cum_60 - cum_6)
-            differences.append((api, abs_diff))
-    df_differences = pd.DataFrame(differences, columns=['API 14', 'Abs Difference'])
-    perct90 = df_differences[df_differences['API 14'] == 30025443490000]['Abs Difference']
-    return [30025428950000]
 
 def plot_production(df):
     scatter = go.Figure()
@@ -100,13 +84,12 @@ def plot_cumulative_production(df):
     cum_graph.update_layout(title="Cumulative Production", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
     return cum_graph
 
-# Main execution for first snippet
+# Main execution
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
 data_dict = load_files(file_pattern)
 for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
-p90_api = calculate_p90(filtered_data_dict)
 
 # Second snippet functions and execution
 columns = [
@@ -270,7 +253,7 @@ html_template += f"""
         var currentLayer;
 
         function updatePlots(data) {{
-            fetch('/plot_data', {{
+            fetch('{ngrok_url}/plot_data', {{
                 method: 'POST',
                 headers: {{
                     'Content-Type': 'application/json'
@@ -436,14 +419,13 @@ with open('combined_output.html', 'w') as f:
 
 print("HTML file created successfully: combined_output.html")
 
-# Server code to handle plot data updates
+# Start the Flask server
 app = Flask(__name__)
 run_with_ngrok(app)
 
 @app.route('/plot_data', methods=['POST'])
 def plot_data():
     data = request.json
-    # Process the data to generate the required plots
     df = pd.DataFrame(data)
     scatter = plot_production(df)
     cumulative = plot_cumulative_production(df)
