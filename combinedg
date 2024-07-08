@@ -4,16 +4,7 @@ import glob
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
-import branca.colormap as cm
-from flask import Flask, request, jsonify
-from flask_ngrok import run_with_ngrok
-import os
-import ssl
-import urllib3
-
-# Disable SSL verification (Not recommended for production)
-ssl._create_default_https_context = ssl._create_unverified_context
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import json
 
 # Define functions
 def load_files(file_pattern):
@@ -122,7 +113,7 @@ geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
 geo_data.set_crs(epsg=4326, inplace=True)
 shape_data = gpd.read_file('PLSSFirstDivision.geojson')
 shape_data.to_crs(epsg=4326, inplace=True)
-joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
+joined = gpd.sjoin(geo_data, shape_data, how='left', predicate='within')
 
 avg_col_names = []
 for col in columns[3:]:
@@ -134,22 +125,22 @@ for col in columns[3:]:
 shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
 colormaps = {}
 for col in avg_col_names:
-    months = col[4]
     avg_col_name = col
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                vmin=shape_data[avg_col_name].min(),
-                                                vmax=150,
-                                                caption=f'EUR Value ({col})')
+    colormaps[avg_col_name] = {
+        'colors': ['blue', 'green', 'yellow', 'orange', 'red'],
+        'vmin': shape_data[avg_col_name].min(),
+        'vmax': 150,
+        'caption': f'EUR Value ({col})'
+    }
 
 geojson_data = {}
 for col in avg_col_names:
-    months = col
     avg_col_name = col
     geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
 
 shape_data2 = gpd.read_file('PLSSTownship.geojson')
 shape_data2.set_crs(epsg=4326, inplace=True)
-joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
+joined2 = gpd.sjoin(geo_data, shape_data2, how='left', predicate='within')
 
 avg_col_names = []
 for col in columns[3:]:
@@ -162,12 +153,13 @@ shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
 colormaps2 = {}
 geojson_data2 = {}
 for col in avg_col_names:
-    months = col
     avg_col_name = f'{col}'
-    colormaps2[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                 vmin=shape_data2[avg_col_name].min(),
-                                                 vmax=150,
-                                                 caption=f'EUR Value ({months})')
+    colormaps2[avg_col_name] = {
+        'colors': ['blue', 'green', 'yellow', 'orange', 'red'],
+        'vmin': shape_data2[avg_col_name].min(),
+        'vmax': 150,
+        'caption': f'EUR Value ({col})'
+    }
     geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
 
 # Create the combined HTML file
@@ -226,16 +218,12 @@ html_template = f"""
 
 html_template += '<optgroup label="Sections">\n'
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="1_{avg_col_name}">{months}</option>\n'
+    html_template += f'<option value="1_{col}">{col}</option>\n'
 html_template += '</optgroup>\n'
 
 html_template += '<optgroup label="Townships">\n'
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="2_{avg_col_name}">{months} </option>\n'
+    html_template += f'<option value="2_{col}">{col}</option>\n'
 html_template += '</optgroup>\n'
 
 html_template += f"""
@@ -255,126 +243,52 @@ html_template += f"""
             attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
         }}).addTo(map);
 
-        var colormaps = {{}};
-        var colormaps2 = {{}};
+        var colormaps = {json.dumps(colormaps)};
+        var colormaps2 = {json.dumps(colormaps2)};
+        var geojson_data = {json.dumps(geojson_data)};
+        var geojson_data2 = {json.dumps(geojson_data2)};
         var currentLayer;
 
         function updatePlots(data) {{
-            fetch('{ngrok_url}/plot_data', {{
-                method: 'POST',
-                headers: {{
-                    'Content-Type': 'application/json'
-                }},
-                body: JSON.stringify(data)
-            }})
-            .then(response => response.json())
-            .then(data => {{
-                Plotly.newPlot('scatter-plot', data.scatter);
-                Plotly.newPlot('cumulative-plot', data.cumulative);
+            var scatter = data.map(function(d) {{
+                return {{
+                    x: d.NormalizedMonth,
+                    y: d.OilProduction,
+                    mode: 'markers+lines',
+                    name: 'Production'
+                }};
             }});
-        }}
-"""
 
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        colormaps['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([30,60,90,120,150,180])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
+            var cumulative = data.map(function(d) {{
+                return {{
+                    x: d.NormalizedMonth,
+                    y: d.CumulativeProduction,
+                    mode: 'markers+lines',
+                    name: 'Cumulative Production'
+                }};
+            }});
 
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        colormaps2['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([30,60,90,120,150,180])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    html_template += f"""
-        function style_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
+            var scatterLayout = {{
+                title: "Production Data",
+                xaxis: {{ title: 'Normalized Month' }},
+                yaxis: {{ title: 'Production' }},
+                template: 'plotly_dark',
+                hovermode: 'x'
             }};
-        }}
 
-        function onEachFeature_{avg_col_name}(feature, layer) {{
-            layer.on({{
-                click: function() {{
-                    updatePlots(feature.properties);
-                }}
-            }});
-        }}
-
-        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
-            style: style_{avg_col_name},
-            onEachFeature: onEachFeature_{avg_col_name}
-        }});
-        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
-        console.log('Defined layer_1_{avg_col_name}');
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        function style2_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps2['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
+            var cumulativeLayout = {{
+                title: "Cumulative Production",
+                xaxis: {{ title: 'Normalized Month' }},
+                yaxis: {{ title: 'Cumulative Production' }},
+                template: 'plotly_dark',
+                hovermode: 'x'
             }};
+
+            Plotly.newPlot('scatter-plot', scatter, scatterLayout);
+            Plotly.newPlot('cumulative-plot', cumulative, cumulativeLayout);
         }}
 
-        function onEachFeature2_{avg_col_name}(feature, layer) {{
-            layer.on({{
-                click: function() {{
-                    updatePlots(feature.properties);
-                }}
-            }});
-        }}
-
-        var layer_2_{avg_col_name} = L.geoJson({geojson_data2[avg_col_name]}, {{
-            style: style2_{avg_col_name},
-            onEachFeature: onEachFeature2_{avg_col_name}
-        }});
-        window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
-        console.log('Defined layer_2_{avg_col_name}');
-    """
-
-html_template += """
-        currentLayer = window['layer_1_avg_6_months'];
-        currentLayer.addTo(map);
-        console.log('Initialized currentLayer:', currentLayer);
-
-        function updateMap() {
-            var selectedLayer = document.getElementById('layer-select').value;
-            console.log('Selected layer:', selectedLayer);
-            if (currentLayer) {
-                console.log('Removing current layer:', currentLayer);
-                map.removeLayer(currentLayer);
-            }
-            currentLayer = window['layer_' + selectedLayer];
-            console.log('Adding new layer:', currentLayer);
-            if (currentLayer) {
-                currentLayer.addTo(map);
-                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormaps[selectedLayer], [0,30,60,90,120,150]);
-            } else {
-                console.error('Layer not found:', selectedLayer);
-            }
-        }
-
-        function updateLegend(colormap, domain) {
+        function updateLegend(colormap, domain) {{
             var legend = d3.select('#legend');
             legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
             var legendScale = d3.scaleLinear()
@@ -401,11 +315,11 @@ html_template += """
                 .attr('x2', '100%')
                 .attr('y2', '0%');
 
-            domain.forEach(function(d, i) {
+            domain.forEach(function(d, i) {{
                 gradient.append('stop')
                     .attr('offset', (i / (domain.length - 1) * 100) + '%')
                     .attr('stop-color', colormap(d));
-            });
+            }});
 
             svg.append('rect')
                 .attr('width', 300)
@@ -413,9 +327,56 @@ html_template += """
                 .attr('x', 10)
                 .attr('y', 20)
                 .style('fill', 'url(#gradient)');
-        }
+        }}
 
-        updateLegend(colormaps['avg_6_months'], [0,30,60,90,120,150]);
+        function styleFactory(colormapName, dataKey) {{
+            return function (feature) {{
+                var colormap = colormaps[colormapName];
+                return {{
+                    fillColor: d3.scaleThreshold()
+                        .domain([30, 60, 90, 120, 150, 180])
+                        .range(colormap.colors)(feature.properties[dataKey]),
+                    color: 'black',
+                    weight: 0.5,
+                    fillOpacity: 0.7
+                }};
+            }};
+        }}
+
+        function onEachFeatureFactory(dataKey) {{
+            return function (feature, layer) {{
+                layer.on({{
+                    click: function() {{
+                        updatePlots(feature.properties[dataKey]);
+                    }}
+                }});
+            }};
+        }}
+
+        function addLayer(map, layerName, geojsonData) {{
+            var layer = L.geoJson(geojsonData, {{
+                style: styleFactory(layerName, layerName),
+                onEachFeature: onEachFeatureFactory(layerName)
+            }});
+            map.addLayer(layer);
+            return layer;
+        }}
+
+        currentLayer = addLayer(map, 'avg_6_months', geojson_data['avg_6_months']);
+        updateLegend(colormaps['avg_6_months'].colors, [0, 30, 60, 90, 120, 150]);
+
+        function updateMap() {{
+            var selectedLayer = document.getElementById('layer-select').value;
+            if (currentLayer) {{
+                map.removeLayer(currentLayer);
+            }}
+            if (selectedLayer.startsWith('1_')) {{
+                currentLayer = addLayer(map, selectedLayer, geojson_data[selectedLayer]);
+            }} else {{
+                currentLayer = addLayer(map, selectedLayer, geojson_data2[selectedLayer]);
+            }}
+            updateLegend(colormaps[selectedLayer].colors, [0, 30, 60, 90, 120, 150]);
+        }}
     </script>
 </body>
 </html>
@@ -425,20 +386,3 @@ with open('combined_output.html', 'w') as f:
     f.write(html_template)
 
 print("HTML file created successfully: combined_output.html")
-
-# Start the Flask server
-app = Flask(__name__)
-run_with_ngrok(app)
-
-@app.route('/plot_data', methods=['POST'])
-def plot_data():
-    data = request.json
-    df = pd.DataFrame(data)
-    scatter = plot_production(df)
-    cumulative = plot_cumulative_production(df)
-    return jsonify({
-        'scatter': scatter.to_plotly_json(),
-        'cumulative': cumulative.to_plotly_json()
-    })
-
-app.run()
