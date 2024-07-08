@@ -7,6 +7,13 @@ from shapely.geometry import Point
 import branca.colormap as cm
 from flask import Flask, request, jsonify
 from flask_ngrok import run_with_ngrok
+import os
+import ssl
+import urllib3
+
+# Disable SSL verification (Not recommended for production)
+ssl._create_default_https_context = ssl._create_unverified_context
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Define functions
 def load_files(file_pattern):
