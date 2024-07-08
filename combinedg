@@ -6,6 +6,7 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
+import json
 
 # First snippet functions
 def load_files(file_pattern):
@@ -50,86 +51,53 @@ def calculate_p90(data_dict):
     perct90 = df_differences[df_differences['API 14'] == 30025443490000]['Abs Difference']
     return [30025428950000]
 
-def plot_production(data_dict, p90_api):
+def plot_production(df):
     scatter = go.Figure()
-    df = data_dict
-    for month in data_dict.keys():
-        for api in p90_api:
-            well_data = df[month][df[month]['API 14'] == api].reset_index()
-            if month == 6:
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Oil Production (BBL/M)'],
-                    mode='markers+lines',
-                    name=f'Production'
-                ))
-            well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
-            well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
-            scatter.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Oil Forecast (BBL/M)'],
-                mode='markers+lines',
-                line=dict(dash='dot'),
-                name=f'{month} Forecast'
-            ))
-    scatter.update_layout(title= f"Production Data | API: {p90_api}", xaxis_title='Normalized Month', yaxis_title='Production', template = 'plotly_dark', hovermode ='x')
+    df = df.reset_index()
+    scatter.add_trace(go.Scatter(
+        x=df['Normalized Month'],
+        y=df['Oil Production (BBL/M)'],
+        mode='markers+lines',
+        name='Production'
+    ))
+    df.loc[0, 'Oil Forecast (BBL/M)'] = df.loc[0, 'Oil Production (BBL/M)']
+    df.loc[1, 'Oil Forecast (BBL/M)'] = df.loc[1, 'Oil Production (BBL/M)']
+    scatter.add_trace(go.Scatter(
+        x=df['Normalized Month'],
+        y=df['Oil Forecast (BBL/M)'],
+        mode='markers+lines',
+        line=dict(dash='dot'),
+        name='Forecast'
+    ))
+    scatter.update_layout(title="Production Data", xaxis_title='Normalized Month', yaxis_title='Production', template='plotly_dark', hovermode='x')
     return scatter
 
-def plot_cumulative_production(data_dict, p90_api):
+def plot_cumulative_production(df):
     cum_graph = go.Figure()
-    count = 0
-    for api in p90_api:
-        for month in sorted(data_dict.keys()):
-            df = data_dict[month]
-            well_data = df[df['API 14'] == api].reset_index()
-            well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
-            well_data['Cumulative Forecast'] = np.zeros(len(well_data['Cumulative Production']))
-            for i in well_data['Normalized Month']:
-                if i <= month:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Production (BBL/M)'] + well_data.loc[(i -2) , 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Production (BBL/M)']
-                else:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Forecast (BBL/M)'] + well_data.loc[(i -2) , 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Forecast (BBL/M)']
-            if month == 6:
-                cum_graph.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Cumulative Production'],
-                    mode='markers+lines',
-                    name=f'Cumulative Production'
-                ))
-            cum_graph.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Cumulative Forecast'],
-                mode='markers+lines',
-                line=dict(dash='dot'),
-                name=f'{month} Cumulative Forecast'
-            ))
-            print(f"finished month {month}")
-        count = count + 1
-    cum_graph.update_layout(title=f"Cumulative Production | API: {p90_api}", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template = 'plotly_dark',hovermode = 'x')
+    df['Cumulative Production'] = df['Oil Production (BBL/M)'].cumsum()
+    df['Cumulative Forecast'] = np.zeros(len(df['Cumulative Production']))
+    for i in df['Normalized Month']:
+        if i-1 != 0:
+            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Production (BBL/M)'] + df.loc[(i-2), 'Cumulative Forecast']
+        else:
+            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Production (BBL/M)']
+        if i > 6:
+            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Forecast (BBL/M)'] + df.loc[(i-2), 'Cumulative Forecast']
+    cum_graph.add_trace(go.Scatter(
+        x=df['Normalized Month'],
+        y=df['Cumulative Production'],
+        mode='markers+lines',
+        name='Cumulative Production'
+    ))
+    cum_graph.add_trace(go.Scatter(
+        x=df['Normalized Month'],
+        y=df['Cumulative Forecast'],
+        mode='markers+lines',
+        line=dict(dash='dot'),
+        name='Cumulative Forecast'
+    ))
+    cum_graph.update_layout(title="Cumulative Production", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
     return cum_graph
-
-def combine_plots(scatter, cum_graph):
-    fig = sp.make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=('Production Data', 'Cumulative Production'))
-    fig.update_yaxes(type = 'log')
-    for trace in scatter.data:
-        fig.add_trace(trace, row=1, col=1)
-    for trace in cum_graph.data:
-        fig.add_trace(trace, row=2, col=1)
-    fig.update_layout(
-        height=800,
-        title_text="Production Data and Cumulative Production",
-        xaxis_title='Normalized Month',
-        yaxis_title='Production / Cumulative Production',
-        template = 'plotly_dark',
-        hovermode = 'x'
-    )
-    fig.write_html('combined.html')
 
 # Main execution for first snippet
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
@@ -138,9 +106,6 @@ for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
 p90_api = calculate_p90(filtered_data_dict)
-scatter = plot_production(filtered_data_dict, p90_api)
-cum_graph = plot_cumulative_production(filtered_data_dict, p90_api)
-combine_plots(scatter, cum_graph)
 
 # Second snippet functions and execution
 columns = [
@@ -168,7 +133,7 @@ shape_data = gpd.read_file('PLSSFirstDivision.geojson')
 shape_data.to_crs(epsg=4326, inplace=True)
 joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
 
-avg_col_names=[]
+avg_col_names = []
 for col in columns[3:]:
     months = col.split()[2]
     avg_col_name = f'avg_{months}_months'
@@ -195,7 +160,7 @@ shape_data2 = gpd.read_file('PLSSTownship.geojson')
 shape_data2.set_crs(epsg=4326, inplace=True)
 joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
 
-avg_col_names=[]
+avg_col_names = []
 for col in columns[3:]:
     months = col.split()[2]
     avg_col_name = f'avg_{months}_months'
@@ -214,7 +179,7 @@ for col in avg_col_names:
                                                  caption=f'EUR Value ({months})')
     geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
 
-# Combined HTML creation
+# Create the combined HTML file
 html_template = f"""
 <!DOCTYPE html>
 <html>
@@ -261,6 +226,7 @@ html_template = f"""
     </style>
     <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
     <script src=https://d3js.org/d3.v5.min.js></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <div id="controls">
@@ -287,7 +253,8 @@ html_template += f"""
     <div id="map"></div>
     <div class="legend" id="legend"></div>
     <div id="plots">
-        <iframe src="combined.html" width="100%" height="100%" style="border:none;"></iframe>
+        <div id="scatter-plot" style="width:100%; height:50%;"></div>
+        <div id="cumulative-plot" style="width:100%; height:50%;"></div>
     </div>
     <script>
         var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
@@ -299,6 +266,22 @@ html_template += f"""
 
         var colormaps = {{}};
         var colormaps2 = {{}};
+        var currentLayer;
+
+        function updatePlots(data) {{
+            fetch('/plot_data', {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json'
+                }},
+                body: JSON.stringify(data)
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                Plotly.newPlot('scatter-plot', data.scatter);
+                Plotly.newPlot('cumulative-plot', data.cumulative);
+            }});
+        }}
 """
 
 for col in avg_col_names:
@@ -331,6 +314,21 @@ for col in avg_col_names:
                 fillOpacity: 0.7
             }};
         }}
+
+        function onEachFeature_{avg_col_name}(feature, layer) {{
+            layer.on({{
+                click: function() {{
+                    updatePlots(feature.properties);
+                }}
+            }});
+        }}
+
+        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
+            style: style_{avg_col_name},
+            onEachFeature: onEachFeature_{avg_col_name}
+        }});
+        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
+        console.log('Defined layer_1_{avg_col_name}');
     """
 
 for col in avg_col_names:
@@ -345,38 +343,25 @@ for col in avg_col_names:
                 fillOpacity: 0.7
             }};
         }}
-    """
 
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
-            style: style_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
-        }});
-        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
-        console.log('Defined layer_1_{avg_col_name}');
-    """
+        function onEachFeature2_{avg_col_name}(feature, layer) {{
+            layer.on({{
+                click: function() {{
+                    updatePlots(feature.properties);
+                }}
+            }});
+        }}
 
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
         var layer_2_{avg_col_name} = L.geoJson({geojson_data2[avg_col_name]}, {{
             style: style2_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
+            onEachFeature: onEachFeature2_{avg_col_name}
         }});
         window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
         console.log('Defined layer_2_{avg_col_name}');
     """
 
 html_template += """
-        var currentLayer = window['layer_1_avg_6_months'];
+        currentLayer = window['layer_1_avg_6_months'];
         currentLayer.addTo(map);
         console.log('Initialized currentLayer:', currentLayer);
 
@@ -392,7 +377,7 @@ html_template += """
             if (currentLayer) {
                 currentLayer.addTo(map);
                 var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormaps[selected_layer], [0,30,60,90,120,150]);
+                updateLegend(colormaps[selectedLayer], [0,30,60,90,120,150]);
             } else {
                 console.error('Layer not found:', selectedLayer);
             }
@@ -449,3 +434,42 @@ with open('combined_output.html', 'w') as f:
     f.write(html_template)
 
 print("HTML file created successfully: combined_output.html")
+
+# Server code to handle plot data updates
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/plot_data', methods=['POST'])
+def plot_data():
+    data = request.json
+    # Process the data to generate the required plots
+    # Here, we will use a mock implementation for demonstration purposes
+    df = pd.DataFrame(data)
+    scatter = plot_production(df)
+    cumulative = plot_cumulative_production(df)
+    return jsonify({
+        'scatter': scatter.to_plotly_json(),
+        'cumulative': cumulative.to_plotly_json()
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/plot_data', methods=['POST'])
+def plot_data():
+    data = request.json
+    # Process the data to generate the required plots
+    df = pd.DataFrame(data)
+    scatter = plot_production(df)
+    cumulative = plot_cumulative_production(df)
+    return jsonify({
+        'scatter': scatter.to_plotly_json(),
+        'cumulative': cumulative.to_plotly_json()
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
