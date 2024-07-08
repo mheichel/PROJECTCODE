@@ -1,12 +1,13 @@
 import pandas as pd
 import plotly.graph_objs as go
-import plotly.subplots as sp
 import glob
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
 import json
+from flask import Flask, request, jsonify
+from flask_ngrok import run_with_ngrok
 
 # First snippet functions
 def load_files(file_pattern):
@@ -436,28 +437,8 @@ with open('combined_output.html', 'w') as f:
 print("HTML file created successfully: combined_output.html")
 
 # Server code to handle plot data updates
-from flask import Flask, request, jsonify
-
 app = Flask(__name__)
-
-@app.route('/plot_data', methods=['POST'])
-def plot_data():
-    data = request.json
-    # Process the data to generate the required plots
-    # Here, we will use a mock implementation for demonstration purposes
-    df = pd.DataFrame(data)
-    scatter = plot_production(df)
-    cumulative = plot_cumulative_production(df)
-    return jsonify({
-        'scatter': scatter.to_plotly_json(),
-        'cumulative': cumulative.to_plotly_json()
-    })
-
-if __name__ == '__main__':
-    app.run(debug=True)
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
+run_with_ngrok(app)
 
 @app.route('/plot_data', methods=['POST'])
 def plot_data():
@@ -471,5 +452,4 @@ def plot_data():
         'cumulative': cumulative.to_plotly_json()
     })
 
-if __name__ == '__main__':
-    app.run(debug=True)
+app.run()
