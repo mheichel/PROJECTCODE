@@ -34,54 +34,6 @@ def filter_wells(data_dict):
         filtered_data[month] = df
     return filtered_data
 
-def plot_production(df):
-    scatter = go.Figure()
-    df = df.reset_index()
-    scatter.add_trace(go.Scatter(
-        x=df['Normalized Month'],
-        y=df['Oil Production (BBL/M)'],
-        mode='markers+lines',
-        name='Production'
-    ))
-    df.loc[0, 'Oil Forecast (BBL/M)'] = df.loc[0, 'Oil Production (BBL/M)']
-    df.loc[1, 'Oil Forecast (BBL/M)'] = df.loc[1, 'Oil Production (BBL/M)']
-    scatter.add_trace(go.Scatter(
-        x=df['Normalized Month'],
-        y=df['Oil Forecast (BBL/M)'],
-        mode='markers+lines',
-        line=dict(dash='dot'),
-        name='Forecast'
-    ))
-    scatter.update_layout(title="Production Data", xaxis_title='Normalized Month', yaxis_title='Production', template='plotly_dark', hovermode='x')
-    return scatter
-
-def plot_cumulative_production(df):
-    cum_graph = go.Figure()
-    df['Cumulative Production'] = df['Oil Production (BBL/M)'].cumsum()
-    df['Cumulative Forecast'] = np.zeros(len(df['Cumulative Production']))
-    for i in df['Normalized Month']:
-        if i-1 != 0:
-            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Production (BBL/M)'] + df.loc[(i-2), 'Cumulative Forecast']
-        else:
-            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Production (BBL/M)']
-        if i > 6:
-            df.loc[i-1, 'Cumulative Forecast'] = df.loc[i-1, 'Oil Forecast (BBL/M)'] + df.loc[(i-2), 'Cumulative Forecast']
-    cum_graph.add_trace(go.Scatter(
-        x=df['Normalized Month'],
-        y=df['Cumulative Production'],
-        mode='markers+lines',
-        name='Cumulative Production'
-    ))
-    cum_graph.add_trace(go.Scatter(
-        x=df['Normalized Month'],
-        y=df['Cumulative Forecast'],
-        mode='markers+lines',
-        line=dict(dash='dot'),
-        name='Cumulative Forecast'
-    ))
-    cum_graph.update_layout(title="Cumulative Production", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
-    return cum_graph
-
 # Main execution
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
 data_dict = load_files(file_pattern)
@@ -136,7 +88,7 @@ for col in avg_col_names:
 geojson_data = {}
 for col in avg_col_names:
     avg_col_name = col
-    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
+    geojson_data[avg_col_name] = json.loads(shape_data[['geometry', avg_col_name]].to_json())
 
 shape_data2 = gpd.read_file('PLSSTownship.geojson')
 shape_data2.set_crs(epsg=4326, inplace=True)
@@ -160,7 +112,7 @@ for col in avg_col_names:
         'vmax': 150,
         'caption': f'EUR Value ({col})'
     }
-    geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
+    geojson_data2[avg_col_name] = json.loads(shape_data2[['geometry', avg_col_name]].to_json())
 
 # Create the combined HTML file
 html_template = f"""
@@ -170,7 +122,7 @@ html_template = f"""
     <title>Combined Output</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href=https://unpkg.com/leaflet@1.7.1/dist/leaflet.css />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
         html, body {{
             height: 100%;
@@ -207,8 +159,8 @@ html_template = f"""
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
     </style>
-    <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
-    <script src=https://d3js.org/d3.v5.min.js></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
@@ -249,8 +201,9 @@ html_template += f"""
         var geojson_data2 = {json.dumps(geojson_data2)};
         var currentLayer;
 
-        function updatePlots(data) {{
-            var scatter = data.map(function(d) {{
+        function updatePlots(properties) {{
+            var data = properties.data;
+            var scatterData = data.map(function(d) {{
                 return {{
                     x: d.NormalizedMonth,
                     y: d.OilProduction,
@@ -259,7 +212,7 @@ html_template += f"""
                 }};
             }});
 
-            var cumulative = data.map(function(d) {{
+            var cumulativeData = data.map(function(d) {{
                 return {{
                     x: d.NormalizedMonth,
                     y: d.CumulativeProduction,
@@ -284,8 +237,8 @@ html_template += f"""
                 hovermode: 'x'
             }};
 
-            Plotly.newPlot('scatter-plot', scatter, scatterLayout);
-            Plotly.newPlot('cumulative-plot', cumulative, cumulativeLayout);
+            Plotly.newPlot('scatter-plot', scatterData, scatterLayout);
+            Plotly.newPlot('cumulative-plot', cumulativeData, cumulativeLayout);
         }}
 
         function updateLegend(colormap, domain) {{
@@ -347,7 +300,7 @@ html_template += f"""
             return function (feature, layer) {{
                 layer.on({{
                     click: function() {{
-                        updatePlots(feature.properties[dataKey]);
+                        updatePlots(feature.properties);
                     }}
                 }});
             }};
@@ -363,7 +316,7 @@ html_template += f"""
         }}
 
         currentLayer = addLayer(map, 'avg_6_months', geojson_data['avg_6_months']);
-        updateLegend(colormaps['avg_6_months'].colors, [0, 30, 60, 90, 120, 150]);
+        updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps['avg_6_months'].colors), [30, 60, 90, 120, 150, 180]);
 
         function updateMap() {{
             var selectedLayer = document.getElementById('layer-select').value;
@@ -375,7 +328,7 @@ html_template += f"""
             }} else {{
                 currentLayer = addLayer(map, selectedLayer, geojson_data2[selectedLayer]);
             }}
-            updateLegend(colormaps[selectedLayer].colors, [0, 30, 60, 90, 120, 150]);
+            updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps[selectedLayer].colors), [30, 60, 90, 120, 150, 180]);
         }}
     </script>
 </body>
