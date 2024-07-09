@@ -7,7 +7,6 @@ import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
 import json
-from IPython.display import display, HTML
 
 # First snippet functions
 
@@ -30,119 +29,75 @@ def calculate_cumulative(df):
 
 def filter_wells(data_dict):
     filtered_data = {}
-    for month, df in data_dict.items():
-        if month == 60:
-            api_60 = df['API 14'].unique()
-        if month == 6:
-            api_6 = df['API 14'].unique()
+    api_60 = data_dict[60]['API 14'].unique()
+    api_6 = data_dict[6]['API 14'].unique()
     valid_apis = set(api_6).intersection(api_60)
     for month, df in data_dict.items():
         df = df[df['API 14'].isin(valid_apis)]
         filtered_data[month] = df
     return filtered_data
 
-def calculate_p50(data_dict):
-    differences = []
-    for api in data_dict[60]['API 14'].unique():
-        cum_6 = data_dict[6].loc[data_dict[6]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
-        cum_60 = data_dict[60].loc[data_dict[60]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
-        if cum_60 != 0:
-            abs_diff = abs(cum_60 - cum_6)
-            differences.append((api, abs_diff))
-    df_differences = pd.DataFrame(differences, columns=['API 14', 'Abs Difference'])
-    p50_api = df_differences['API 14'][df_differences['Abs Difference'] == df_differences['Abs Difference'].median()].values
-    return p50_api
-
 def plot_production(data_dict, api):
     scatter = go.Figure()
-    df = data_dict
-    for month in data_dict.keys():
-        for well_api in api:
-            well_data = df[month][df[month]['API 14'] == well_api].reset_index()
-            if month == 6:
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Oil Production (BBL/M)'],
-                    mode='lines',
-                    name=f'Production'
-                ))
-            well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
-            well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
-            scatter.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Oil Forecast (BBL/M)'],
-                mode='lines',
-                line=dict(dash='dot'),
-                name=f'{month} Forecast'
-            ))
+    for month, df in data_dict.items():
+        well_data = df[df['API 14'] == api]
+        scatter.add_trace(go.Scatter(
+            x=well_data['Normalized Month'],
+            y=well_data['Oil Production (BBL/M)'],
+            mode='lines',
+            name=f'{month} Production'
+        ))
+        scatter.add_trace(go.Scatter(
+            x=well_data['Normalized Month'],
+            y=well_data['Oil Forecast (BBL/M)'],
+            mode='lines',
+            line=dict(dash='dot'),
+            name=f'{month} Forecast'
+        ))
     scatter.update_layout(title=f"Production Data | API: {api}", xaxis_title='Normalized Month', yaxis_title='Production', template='plotly_dark', hovermode='x')
     return scatter
 
 def plot_cumulative_production(data_dict, api):
     cum_graph = go.Figure()
-    for well_api in api:
-        for month in sorted(data_dict.keys()):
-            df = data_dict[month]
-            well_data = df[df['API 14'] == well_api].reset_index()
-            well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
-            well_data['Cumulative Forecast'] = np.zeros(len(well_data['Cumulative Production']))
-            for i in well_data['Normalized Month']:
-                if i <= month:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Production (BBL/M)'] + well_data.loc[(i -2) , 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Production (BBL/M)']
-                else:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Forecast (BBL/M)'] + well_data.loc[(i -2) , 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1,'Oil Forecast (BBL/M)']
-            if month == 6:
-                cum_graph.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Cumulative Production'],
-                    mode='lines',
-                    name=f'Cum Production'
-                ))
-            cum_graph.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Cumulative Forecast'],
-                mode='lines',
-                line=dict(dash='dot'),
-                name=f'{month} Cum Forecast'
-            ))
-    cum_graph.update_layout(title=f"Cumulative Production | API: {api}", xaxis_title='Norm Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
+    for month, df in data_dict.items():
+        well_data = df[df['API 14'] == api].copy()
+        well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
+        well_data['Cumulative Forecast'] = well_data['Oil Forecast (BBL/M)'].cumsum()
+        cum_graph.add_trace(go.Scatter(
+            x=well_data['Normalized Month'],
+            y=well_data['Cumulative Production'],
+            mode='lines',
+            name=f'{month} Cum Production'
+        ))
+        cum_graph.add_trace(go.Scatter(
+            x=well_data['Normalized Month'],
+            y=well_data['Cumulative Forecast'],
+            mode='lines',
+            line=dict(dash='dot'),
+            name=f'{month} Cum Forecast'
+        ))
+    cum_graph.update_layout(title=f"Cumulative Production | API: {api}", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
     return cum_graph
 
 def combine_plots(scatter, cum_graph, api):
     fig = sp.make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=(f'Production Data', 'Cumulative Production'))
-    fig.update_yaxes(type='log')
     for trace in scatter.data:
         fig.add_trace(trace, row=1, col=1)
     for trace in cum_graph.data:
         fig.add_trace(trace, row=2, col=1)
-    fig.update_layout(
-        height=900,
-        title_text=f"Cum/Monthly Production | API: {api}",
-        xaxis_title='Norm Month',
-        yaxis_title='Production / Cum Production',
-        template='plotly_dark',
-        hovermode='x',
-        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, font=dict(size=10), itemwidth=40)
-    )
+    fig.update_layout(height=900, title_text=f"Production and Cumulative Production | API: {api}", xaxis_title='Normalized Month', yaxis_title='Production / Cumulative Production', template='plotly_dark', hovermode='x', legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, font=dict(size=10), itemwidth=40))
     return fig
 
-# Main execution for first snippet
+# Main execution
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
 data_dict = load_files(file_pattern)
 for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
-p50_api = calculate_p50(filtered_data_dict)
 
-scatter = plot_production(filtered_data_dict, [30025428950000])
-cum_graph = plot_cumulative_production(filtered_data_dict, [30025428950000])
-combined_fig = combine_plots(scatter, cum_graph, [30025428950000])
+scatter = plot_production(filtered_data_dict, 30025428950000)
+cum_graph = plot_cumulative_production(filtered_data_dict, 30025428950000)
+combined_fig = combine_plots(scatter, cum_graph, 30025428950000)
 combined_fig.write_html('combined.html')
 
 # Second snippet functions and execution
@@ -156,11 +111,9 @@ columns = [
 wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
 wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
 wells_df = wells_df[wells_df['latitude'] > 0.1]
-
 for col in columns[3:]:
     wells_df = wells_df[wells_df[col] > 0.1]
     wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
-
 wells_df = wells_df.reset_index()
 mean_latitude = wells_df['latitude'].mean()
 mean_longitude = wells_df['longitude'].mean()
@@ -170,54 +123,24 @@ geo_data.set_crs(epsg=4326, inplace=True)
 shape_data = gpd.read_file('PLSSFirstDivision.geojson')
 shape_data.to_crs(epsg=4326, inplace=True)
 joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
-
 avg_col_names=[]
 for col in columns[3:]:
     months = col.split()[2]
     avg_col_name = f'avg_{months}_months'
     shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
     avg_col_names.append(avg_col_name)
-
 shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
 colormaps = {}
 for col in avg_col_names:
     months = col
     avg_col_name = col
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                vmin=shape_data[avg_col_name].min(),
-                                                vmax=90,
-                                                caption=f'EUR Value ({col})')
-
+    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'], vmin=shape_data[avg_col_name].min(), vmax=90, caption=f'EUR Value ({col})')
 geojson_data = {}
 for col in avg_col_names:
     months = col
     avg_col_name = col
     geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
 
-shape_data2 = gpd.read_file('PLSSTownship.geojson')
-shape_data2.set_crs(epsg=4326, inplace=True)
-joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
-
-avg_col_names=[]
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-
-shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
-colormaps2 = {}
-geojson_data2 = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    colormaps2[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                 vmin=shape_data2[avg_col_name].min(),
-                                                 vmax=90,
-                                                 caption=f'EUR Value ({months})')
-    geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
-
-# Combined HTML creation
 html_template = f"""
 <!DOCTYPE html>
 <html>
@@ -225,7 +148,10 @@ html_template = f"""
     <title>Combined Output</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href=https://unpkg.com/leaflet@1.7.1/dist/leaflet.css />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         html, body {{
             height: 100%;
@@ -262,9 +188,6 @@ html_template = f"""
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
     </style>
-    <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
-    <script src=https://d3js.org/d3.v5.min.js></script>
-    <script src=https://cdn.plot.ly/plotly-latest.min.js></script>
 </head>
 <body>
     <div id="controls">
@@ -273,19 +196,14 @@ html_template = f"""
 
 html_template += '<optgroup label="Sections">\n'
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="1_{avg_col_name}">{months}</option>\n'
+    html_template += f'<option value="1_{col}">{col.split("_")[1]}</option>\n'
 html_template += '</optgroup>\n'
-
 html_template += '<optgroup label="Townships">\n'
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="2_{avg_col_name}">{months} </option>\n'
+    html_template += f'<option value="2_{col}">{col.split("_")[1]}</option>\n'
 html_template += '</optgroup>\n'
 
-html_template += f"""
+html_template += """
         </select>
     </div>
     <div id="map"></div>
@@ -295,136 +213,105 @@ html_template += f"""
         <div id="cum_graph"></div>
     </div>
     <script>
-        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+        var map = L.map('map').setView([%f, %f], 10);
 
-        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
-            attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
-        }}).addTo(map);
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
 
-        var colormaps = {{}};
-        var colormaps2 = {{}};
-"""
+        var colormaps = {};
+        var colormaps2 = {};
+""" % (mean_latitude, mean_longitude)
 
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
     html_template += f"""
-        colormaps['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([15,30,45,60,75,90])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
+        colormaps['{col}'] = d3.scaleThreshold()
+            .domain([15, 30, 45, 60, 75, 90])
+            .range(["white", "blue", "green", "yellow", "orange", "red"]);
+    """
+    html_template += f"""
+        colormaps2['{col}'] = d3.scaleThreshold()
+            .domain([15, 30, 45, 60, 75, 90])
+            .range(["white", "blue", "green", "yellow", "orange", "red"]);
     """
 
 for col in avg_col_names:
-    months = col
-    avg_col_name = col
     html_template += f"""
-        colormaps2['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([15,30,45,60,75,90])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    html_template += f"""
-        function style_{avg_col_name}(feature) {{
+        function style_{col}(feature) {{
             return {{
-                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
+                fillColor: colormaps['{col}'](feature.properties.{col}),
                 color: 'black',
                 weight: 0.5,
                 fillOpacity: 0.7
             }};
         }}
     """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
     html_template += f"""
-        function style2_{avg_col_name}(feature) {{
+        function style2_{col}(feature) {{
             return {{
-                fillColor: colormaps2['{avg_col_name}'](feature.properties.{avg_col_name}),
+                fillColor: colormaps2['{col}'](feature.properties.{col}),
                 color: 'black',
                 weight: 0.5,
                 fillOpacity: 0.7
             }};
         }}
     """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
     html_template += f"""
-        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
-            style: style_{avg_col_name},
+        var layer_1_{col} = L.geoJson({geojson_data[col]}, {{
+            style: style_{col},
             onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.bindPopup('EUR ({col.split("_")[1]} Months): ' + feature.properties.{col}.toFixed(2));
                 layer.on('click', function(e) {{
                     updatePlots(feature.properties['API 14']);
                 }});
             }}
         }});
-        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
-        console.log('Defined layer_1_{avg_col_name}');
+        window['layer_1_{col}'] = layer_1_{col};
     """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
     html_template += f"""
-        var layer_2_{avg_col_name} = L.geoJson({geojson_data2[avg_col_name]}, {{
-            style: style2_{avg_col_name},
+        var layer_2_{col} = L.geoJson({geojson_data[col]}, {{
+            style: style2_{col},
             onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.bindPopup('EUR ({col.split("_")[1]} Months): ' + feature.properties.{col}.toFixed(2));
                 layer.on('click', function(e) {{
                     updatePlots(feature.properties['API 14']);
                 }});
             }}
         }});
-        window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
-        console.log('Defined layer_2_{avg_col_name}');
+        window['layer_2_{col}'] = layer_2_{col};
     """
 
 html_template += """
         var currentLayer = window['layer_1_avg_6_months'];
         currentLayer.addTo(map);
-        console.log('Initialized currentLayer:', currentLayer);
 
         function updateMap() {
             var selectedLayer = document.getElementById('layer-select').value;
-            console.log('Selected layer:', selectedLayer);
             if (currentLayer) {
-                console.log('Removing current layer:', currentLayer);
                 map.removeLayer(currentLayer);
             }
             currentLayer = window['layer_' + selectedLayer];
-            console.log('Adding new layer:', currentLayer);
             if (currentLayer) {
                 currentLayer.addTo(map);
-                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormapSet[selectedLayer.split('_')[1]], [0,30,60,90,120,150]);
-            } else {
-                console.error('Layer not found:', selectedLayer);
+                updateLegend(colormaps[selectedLayer.split('_')[1]]);
             }
         }
 
         function updatePlots(api) {
-            console.log('Selected API:', api);
-
             var data_dict = JSON.parse(document.getElementById('data_dict').textContent);
-            var scatter_data = plotProduction(data_dict, [api]);
-            var cum_graph_data = plotCumulativeProduction(data_dict, [api]);
+            var scatter_data = plotProduction(data_dict, api);
+            var cum_graph_data = plotCumulativeProduction(data_dict, api);
 
             Plotly.react('scatter_plot', scatter_data.data, scatter_data.layout);
             Plotly.react('cum_graph', cum_graph_data.data, cum_graph_data.layout);
         }
 
-        function updateLegend(colormap, domain) {
+        function updateLegend(colormap) {
             var legend = d3.select('#legend');
             legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
             var legendScale = d3.scaleLinear()
-                .domain([domain[0], domain[domain.length - 1]])
+                .domain([0, 90])
                 .range([0, 300]);
 
             var legendAxis = d3.axisBottom(legendScale)
@@ -448,9 +335,9 @@ html_template += """
                 .attr('x2', '100%')
                 .attr('y2', '0%');
 
-            domain.forEach(function(d, i) {
+            [15, 30, 45, 60, 75, 90].forEach(function(d, i) {
                 gradient.append('stop')
-                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
+                    .attr('offset', (i / 5 * 100) + '%')
                     .attr('stop-color', colormap(d));
             });
 
@@ -462,12 +349,8 @@ html_template += """
                 .style('fill', 'url(#gradient)');
         }
 
-        updateLegend(colormaps['avg_6_months'], [15,30,45,60,75,90]);
+        updateLegend(colormaps['avg_6_months']);
 
-        // Initialize the plots with the provided API
-        updatePlots(30025428950000);
-
-        // JavaScript functions for plotting
         function plotProduction(data_dict, api) {
             var scatter = {
                 data: [],
@@ -480,24 +363,20 @@ html_template += """
                 }
             };
             for (var month in data_dict) {
-                for (var i = 0; i < api.length; i++) {
-                    var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api[i]; });
-                    if (month == 6) {
-                        scatter.data.push({
-                            x: well_data.map(row => row['Normalized Month']),
-                            y: well_data.map(row => row['Oil Production (BBL/M)']),
-                            mode: 'lines',
-                            name: 'Production'
-                        });
-                    }
-                    scatter.data.push({
-                        x: well_data.map(row => row['Normalized Month']),
-                        y: well_data.map(row => row['Oil Forecast (BBL/M)']),
-                        mode: 'lines',
-                        line: { dash: 'dot' },
-                        name: month + ' Forecast'
-                    });
-                }
+                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
+                scatter.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Oil Production (BBL/M)']),
+                    mode: 'lines',
+                    name: month + ' Production'
+                });
+                scatter.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Oil Forecast (BBL/M)']),
+                    mode: 'lines',
+                    line: { dash: 'dot' },
+                    name: month + ' Forecast'
+                });
             }
             return scatter;
         }
@@ -507,45 +386,37 @@ html_template += """
                 data: [],
                 layout: {
                     title: 'Cumulative Production | API: ' + api,
-                    xaxis: { title: 'Norm Month' },
+                    xaxis: { title: 'Normalized Month' },
                     yaxis: { title: 'Cumulative Production' },
                     template: 'plotly_dark',
                     hovermode: 'x'
                 }
             };
-            for (var i = 0; i < api.length; i++) {
-                for (var month in data_dict) {
-                    var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api[i]; });
-                    well_data.forEach(function(row, index) {
-                        if (index > 0) {
-                            row['Cumulative Production'] = well_data[index - 1]['Cumulative Production'] + row['Oil Production (BBL/M)'];
-                            row['Cumulative Forecast'] = well_data[index - 1]['Cumulative Forecast'] + row['Oil Forecast (BBL/M)'];
-                        } else {
-                            row['Cumulative Production'] = row['Oil Production (BBL/M)'];
-                            row['Cumulative Forecast'] = row['Oil Forecast (BBL/M)'];
-                        }
-                    });
-                    if (month == 6) {
-                        cum_graph.data.push({
-                            x: well_data.map(row => row['Normalized Month']),
-                            y: well_data.map(row => row['Cumulative Production']),
-                            mode: 'lines',
-                            name: 'Cum Production'
-                        });
-                    }
-                    cum_graph.data.push({
-                        x: well_data.map(row => row['Normalized Month']),
-                        y: well_data.map(row => row['Cumulative Forecast']),
-                        mode: 'lines',
-                        line: { dash: 'dot' },
-                        name: month + ' Cum Forecast'
-                    });
-                }
+            for (var month in data_dict) {
+                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
+                well_data.reduce((acc, row) => {
+                    row['Cumulative Production'] = acc['Cumulative Production'] + row['Oil Production (BBL/M)'];
+                    row['Cumulative Forecast'] = acc['Cumulative Forecast'] + row['Oil Forecast (BBL/M)'];
+                    return row;
+                }, { 'Cumulative Production': 0, 'Cumulative Forecast': 0 });
+                cum_graph.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Cumulative Production']),
+                    mode: 'lines',
+                    name: month + ' Cum Production'
+                });
+                cum_graph.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Cumulative Forecast']),
+                    mode: 'lines',
+                    line: { dash: 'dot' },
+                    name: month + ' Cum Forecast'
+                });
             }
             return cum_graph;
         }
     </script>
-    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict.to_dict(orient='records'))}</script>
+    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict)}</script>
 </body>
 </html>
 """
