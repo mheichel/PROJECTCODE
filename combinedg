@@ -11,7 +11,8 @@ def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
     for file in tqdm(files, desc="Loading and preprocessing data"):
-        df = pd.read_csv(file, low_memory=False)
+        chunks = pd.read_csv(file, chunksize=10000, low_memory=False)
+        df = pd.concat(chunks)
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(by=['API 14', 'Date'])
         df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
@@ -43,7 +44,8 @@ def aggregate_data(data):
     return aggregated_data
 
 def load_wells_data(filename, columns):
-    df = pd.read_csv(filename, usecols=columns)
+    chunks = pd.read_csv(filename, usecols=columns, chunksize=10000)
+    df = pd.concat(chunks)
     df = df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
     df = df[(df['latitude'] > 0.1)]
     for col in columns[3:]:
