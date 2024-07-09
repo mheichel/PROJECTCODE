@@ -299,6 +299,7 @@ html_template += """
         }
 
         function updatePlots(api) {
+            console.log('Selected API:', api);
             var data_dict = JSON.parse(document.getElementById('data_dict').textContent);
             var scatter_data = plotProduction(data_dict, api);
             var cum_graph_data = plotCumulativeProduction(data_dict, api);
@@ -416,7 +417,7 @@ html_template += """
             return cum_graph;
         }
     </script>
-    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict)}</script>
+    <script type="application/json" id="data_dict">{json.dumps({k: v.to_dict(orient='records') for k, v in filtered_data_dict.items()})}</script>
 </body>
 </html>
 """
