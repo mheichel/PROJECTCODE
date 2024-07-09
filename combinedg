@@ -66,7 +66,7 @@ def calculate_avg_values(joined, shape_data, columns):
     for col in columns[3:]:
         months = col.split()[2]
         avg_col_name = f'avg_{months}_months'
-        shape_data[avg_col_name] = joined.groupby(joined.index)['API 14'].mean()
+        shape_data[avg_col_name] = joined.groupby('index_right')[col].transform('mean')
         avg_col_names.append(avg_col_name)
     return shape_data, avg_col_names
 
@@ -126,8 +126,8 @@ def plot_map(shape_data, avg_col_names):
         geo_data=shape_data.to_json(),
         name='choropleth',
         data=shape_data,
-        columns=['index'] + avg_col_names,
-        key_on='feature.id',
+        columns=['index_right'] + avg_col_names,
+        key_on='feature.properties.index_right',
         fill_color='YlOrRd',
         fill_opacity=0.7,
         line_opacity=0.2,
