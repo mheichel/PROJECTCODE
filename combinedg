@@ -2,17 +2,22 @@ import polars as pl
 import plotly.graph_objs as go
 import geopandas as gpd
 from shapely.geometry import Point
-import json
+import folium
+from folium.plugins import HeatMap
 from tqdm import tqdm
+import pandas as pd
+import glob
 
 def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
     for file in tqdm(files, desc="Loading and preprocessing data"):
         df = pl.read_csv(file)
-        df = df.with_column(pl.col("Date").str.strptime(pl.Date, fmt="%Y-%m-%d"))
+        df = df.with_columns([
+            pl.col("Date").str.strptime(pl.Date, fmt="%Y-%m-%d"),
+            pl.arange(1, pl.count("API 14") + 1).over("API 14").alias("Normalized Month")
+        ])
         df = df.sort(["API 14", "Date"])
-        df = df.with_column(pl.arange(1, df.height + 1).over("API 14").alias("Normalized Month"))
         df = df.filter(pl.col("Normalized Month") <= 300)  # Cut off data at 300 months
         month_count = int(file.split('_')[2])
         df = df.with_columns([
@@ -41,7 +46,7 @@ def aggregate_data(data):
             pl.col("Oil Forecast (BBL/M)").mean().alias("Oil Forecast (BBL/M)"),
             pl.col("Cumulative Forecast").mean().alias("Cumulative Forecast")
         ])
-        aggregated_data[month] = aggregated_df.to_dict(as_series=False)
+        aggregated_data[month] = aggregated_df.to_pandas()
     return aggregated_data
 
 def load_wells_data(filename, columns):
@@ -81,204 +86,57 @@ def create_colormaps(shape_data, avg_col_names):
         }
     return colormaps
 
-def save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_data, mean_latitude, mean_longitude, avg_col_names):
-    html_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Combined Output</title>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-        <style>
-            html, body {{ height: 100%; margin: 0; }}
-            #map {{ width: 50%; height: 100%; float: left; }}
-            #plots {{ width: 50%; height: 100%; float: left; }}
-            #controls {{ position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }}
-            .legend {{ position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }}
-        </style>
-        <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-        <script src="https://d3js.org/d3.v5.min.js"></script>
-        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    </head>
-    <body>
-        <div id="controls">
-            <select id="layer-select" onchange="updateMap()">
-    """
-    html_template += '<optgroup label="Sections">\n'
-    for col in avg_col_names:
-        html_template += f'<option value="1_{col}">{col}</option>\n'
-    html_template += '</optgroup>\n'
+def plot_production(aggregated_data, selected_month):
+    data = aggregated_data[selected_month]
+    scatter_data = go.Scatter(
+        x=data['Normalized Month'],
+        y=data['Oil Production (BBL/M)'],
+        mode='markers+lines',
+        name='Production'
+    )
+    layout = go.Layout(
+        title="Production Data",
+        xaxis=dict(title='Normalized Month'),
+        yaxis=dict(title='Production'),
+        template='plotly_dark',
+        hovermode='x'
+    )
+    fig = go.Figure(data=[scatter_data], layout=layout)
+    fig.show()
 
-    html_template += '<optgroup label="Townships">\n'
-    for col in avg_col_names:
-        html_template += f'<option value="2_{col}">{col}</option>\n'
-    html_template += '</optgroup>\n'
+def plot_cumulative_production(aggregated_data, selected_month):
+    data = aggregated_data[selected_month]
+    cumulative_data = go.Scatter(
+        x=data['Normalized Month'],
+        y=data['Cumulative Production'],
+        mode='markers+lines',
+        name='Cumulative Production'
+    )
+    layout = go.Layout(
+        title="Cumulative Production",
+        xaxis=dict(title='Normalized Month'),
+        yaxis=dict(title='Cumulative Production'),
+        template='plotly_dark',
+        hovermode='x'
+    )
+    fig = go.Figure(data=[cumulative_data], layout=layout)
+    fig.show()
 
-    html_template += f"""
-            </select>
-        </div>
-        <div id="map"></div>
-        <div class="legend" id="legend"></div>
-        <div id="plots">
-            <div id="scatter-plot" style="width:100%; height:50%;"></div>
-            <div id="cumulative-plot" style="width:100%; height:50%;"></div>
-        </div>
-        <script>
-            var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
-
-            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                maxZoom: 18,
-                attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
-            }}).addTo(map);
-
-            var colormaps = {json.dumps(colormaps)};
-            var colormaps2 = {json.dumps(colormaps2)};
-            var geojson_data = {json.dumps(geojson_data)};
-            var geojson_data2 = {json.dumps(geojson_data2)};
-            var aggregated_data = {json.dumps(aggregated_data)};
-            var currentLayer;
-
-            function updatePlots(properties) {{
-                var data = aggregated_data[properties.NormalizedMonth];
-                if (!data) return;
-
-                var scatterData = data.map(function(d) {{
-                    return {{
-                        x: d.NormalizedMonth,
-                        y: d['Oil Production (BBL/M)'],
-                        mode: 'markers+lines',
-                        name: 'Production'
-                    }};
-                }});
-
-                var cumulativeData = data.map(function(d) {{
-                    return {{
-                        x: d.NormalizedMonth,
-                        y: d['Cumulative Production'],
-                        mode: 'markers+lines',
-                        name: 'Cumulative Production'
-                    }};
-                }});
-
-                var scatterLayout = {{
-                    title: "Production Data",
-                    xaxis: {{ title: 'Normalized Month' }},
-                    yaxis: {{ title: 'Production' }},
-                    template: 'plotly_dark',
-                    hovermode: 'x'
-                }};
-
-                var cumulativeLayout = {{
-                    title: "Cumulative Production",
-                    xaxis: {{ title: 'Normalized Month' }},
-                    yaxis: {{ title: 'Cumulative Production' }},
-                    template: 'plotly_dark',
-                    hovermode: 'x'
-                }};
-
-                Plotly.newPlot('scatter-plot', scatterData, scatterLayout);
-                Plotly.newPlot('cumulative-plot', cumulativeData, cumulativeLayout);
-            }}
-
-            function updateLegend(colormap, domain) {{
-                var legend = d3.select('#legend');
-                legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
-                var legendScale = d3.scaleLinear()
-                    .domain([domain[0], domain[domain.length - 1]])
-                    .range([0, 300]);
-                var legendAxis = d3.axisBottom(legendScale)
-                    .ticks(5)
-                    .tickFormat(d3.format(".2f"));
-
-                var svg = legend.append('svg')
-                    .attr('width', 320)
-                    .attr('height', 50);
-
-                svg.append('g')
-                    .attr('class', 'axis')
-                    .attr('transform', 'translate(10,30)')
-                    .call(legendAxis);
-
-                var gradient = svg.append('defs')
-                    .append('linearGradient')
-                    .attr('id', 'gradient')
-                    .attr('x1', '0%')
-                    .attr('y1', '0%')
-                    .attr('x2', '100%')
-                    .attr('y2', '0%');
-
-                domain.forEach(function(d, i) {{
-                    gradient.append('stop')
-                        .attr('offset', (i / (domain.length - 1) * 100) + '%')
-                        .attr('stop-color', colormap(d));
-                }});
-
-                svg.append('rect')
-                    .attr('width', 300)
-                    .attr('height', 10)
-                    .attr('x', 10)
-                    .attr('y', 20)
-                    .style('fill', 'url(#gradient)');
-            }}
-
-            function styleFactory(colormapName, dataKey) {{
-                return function (feature) {{
-                    var colormap = colormaps[colormapName];
-                    return {{
-                        fillColor: d3.scaleThreshold()
-                            .domain([30, 60, 90, 120, 150, 180])
-                            .range(colormap.colors)(feature.properties[dataKey]),
-                        color: 'black',
-                        weight: 0.5,
-                        fillOpacity: 0.7
-                    }};
-                }};
-            }}
-
-            function onEachFeatureFactory(dataKey) {{
-                return function (feature, layer) {{
-                    layer.on({{
-                        click: function() {{
-                            updatePlots(feature.properties);
-                        }}
-                    }});
-                }};
-            }}
-
-            function addLayer(map, layerName, geojsonData) {{
-                var layer = L.geoJson(geojsonData, {{
-                    style: styleFactory(layerName, layerName),
-                    onEachFeature: onEachFeatureFactory(layerName)
-                }});
-                map.addLayer(layer);
-                return layer;
-            }}
-
-            currentLayer = addLayer(map, 'avg_6_months', geojson_data['avg_6_months']);
-            updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps['avg_6_months'].colors), [30, 60, 90, 120, 150, 180]);
-
-            function updateMap() {{
-                var selectedLayer = document.getElementById('layer-select').value;
-                if (currentLayer) {{
-                    map.removeLayer(currentLayer);
-                }}
-                if (selectedLayer.startsWith('1_')) {{
-                    currentLayer = addLayer(map, selectedLayer, geojson_data[selectedLayer]);
-                }} else {{
-                    currentLayer = addLayer(map, selectedLayer, geojson_data2[selectedLayer]);
-                }}
-                updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps[selectedLayer].colors), [30, 60, 90, 120, 150, 180]);
-            }}
-        </script>
-    </body>
-    </html>
-    """
-
-    with open('combined_output.html', 'w') as f:
-        f.write(html_template)
-
-    print("HTML file created successfully: combined_output.html")
+def plot_map(shape_data, avg_col_names):
+    m = folium.Map(location=[mean_latitude, mean_longitude], zoom_start=10)
+    folium.Choropleth(
+        geo_data=shape_data.to_json(),
+        name='choropleth',
+        data=shape_data,
+        columns=['index_right'] + avg_col_names,
+        key_on='feature.id',
+        fill_color='YlOrRd',
+        fill_opacity=0.7,
+        line_opacity=0.2,
+        legend_name='EUR Value'
+    ).add_to(m)
+    folium.LayerControl().add_to(m)
+    return m
 
 # Main execution
 print("Starting data processing...")
@@ -308,15 +166,11 @@ print("Well data loaded.")
 print("Loading and processing first shapefile...")
 joined, shape_data = load_geo_data(wells_df, 'PLSSFirstDivision.geojson')
 shape_data, avg_col_names = calculate_avg_values(joined, shape_data, columns)
-colormaps = create_colormaps(shape_data, avg_col_names)
-geojson_data = {col: json.loads(shape_data[['geometry', col]].to_json()) for col in avg_col_names}
 print("First shapefile processed.")
 
 print("Loading and processing second shapefile...")
 joined2, shape_data2 = load_geo_data(wells_df, 'PLSSTownship.geojson')
 shape_data2, avg_col_names = calculate_avg_values(joined2, shape_data2, columns)
-colormaps2 = create_colormaps(shape_data2, avg_col_names)
-geojson_data2 = {col: json.loads(shape_data2[['geometry', col]].to_json()) for col in avg_col_names}
 print("Second shapefile processed.")
 
 # Calculate mean latitude and longitude for map centering
@@ -324,6 +178,11 @@ mean_latitude = wells_df['latitude'].mean()
 mean_longitude = wells_df['longitude'].mean()
 print("Mean latitude and longitude calculated.")
 
-# Save the HTML file
-save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_data, mean_latitude, mean_longitude, avg_col_names)
-print("HTML file saved.")
+# Plotting the map
+m = plot_map(shape_data, avg_col_names)
+m
+
+# Plotting production data for a selected month (example: 60 months)
+selected_month = 60
+plot_production(aggregated_data, selected_month)
+plot_cumulative_production(aggregated_data, selected_month)
