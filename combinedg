@@ -6,8 +6,10 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
+from IPython.display import display, HTML
 
 # First snippet functions
+
 def load_files(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
@@ -38,7 +40,7 @@ def filter_wells(data_dict):
         filtered_data[month] = df
     return filtered_data
 
-def calculate_p90(data_dict):
+def calculate_p50(data_dict):
     differences = []
     for api in data_dict[60]['API 14'].unique():
         cum_6 = data_dict[6].loc[data_dict[6]['API 14'] == api, 'Cumulative Forecast'].iloc[-1]
@@ -47,15 +49,15 @@ def calculate_p90(data_dict):
             abs_diff = abs(cum_60 - cum_6)
             differences.append((api, abs_diff))
     df_differences = pd.DataFrame(differences, columns=['API 14', 'Abs Difference'])
-    perct90 = df_differences[df_differences['API 14'] == 30025443490000]['Abs Difference']
-    return [30025428950000]
+    p50_api = df_differences['API 14'][df_differences['Abs Difference'] == df_differences['Abs Difference'].median()].values
+    return p50_api
 
-def plot_production(data_dict, p90_api):
+def plot_production(data_dict, api):
     scatter = go.Figure()
     df = data_dict
     for month in data_dict.keys():
-        for api in p90_api:
-            well_data = df[month][df[month]['API 14'] == api].reset_index()
+        for well_api in api:
+            well_data = df[month][df[month]['API 14'] == well_api].reset_index()
             if month == 6:
                 scatter.add_trace(go.Scatter(
                     x=well_data['Normalized Month'],
@@ -72,16 +74,15 @@ def plot_production(data_dict, p90_api):
                 line=dict(dash='dot'),
                 name=f'{month} Forecast'
             ))
-    scatter.update_layout(title= f"Production Data | API: {p90_api}", xaxis_title='Normalized Month', yaxis_title='Production', template = 'plotly_dark', hovermode ='x')
+    scatter.update_layout(title=f"Production Data | API: {api}", xaxis_title='Normalized Month', yaxis_title='Production', template='plotly_dark', hovermode='x')
     return scatter
 
-def plot_cumulative_production(data_dict, p90_api):
+def plot_cumulative_production(data_dict, api):
     cum_graph = go.Figure()
-    count = 0
-    for api in p90_api:
+    for well_api in api:
         for month in sorted(data_dict.keys()):
             df = data_dict[month]
-            well_data = df[df['API 14'] == api].reset_index()
+            well_data = df[df['API 14'] == well_api].reset_index()
             well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
             well_data['Cumulative Forecast'] = np.zeros(len(well_data['Cumulative Production']))
             for i in well_data['Normalized Month']:
@@ -109,28 +110,26 @@ def plot_cumulative_production(data_dict, p90_api):
                 line=dict(dash='dot'),
                 name=f'{month} Cum Forecast'
             ))
-            print(f"finished month {month}")
-        count = count + 1
-    cum_graph.update_layout(title=f"Cumulative Production | API: {p90_api}", xaxis_title='Norm Month', yaxis_title='Cumulative Production', template = 'plotly_dark',hovermode = 'x')
+    cum_graph.update_layout(title=f"Cumulative Production | API: {api}", xaxis_title='Norm Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
     return cum_graph
 
-def combine_plots(scatter, cum_graph, p90_api):
+def combine_plots(scatter, cum_graph, api):
     fig = sp.make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=(f'Production Data', 'Cumulative Production'))
-    fig.update_yaxes(type = 'log')
+    fig.update_yaxes(type='log')
     for trace in scatter.data:
         fig.add_trace(trace, row=1, col=1)
     for trace in cum_graph.data:
         fig.add_trace(trace, row=2, col=1)
     fig.update_layout(
         height=900,
-        title_text=f"Cum/Monthly Production | API: {p90_api}",
+        title_text=f"Cum/Monthly Production | API: {api}",
         xaxis_title='Norm Month',
         yaxis_title='Production / Cum Production',
-        template = 'plotly_dark',
-        hovermode = 'x',
-        legend = dict(orientation="h",yanchor="top",y=1.02,xanchor="left",x=0,font=dict(size=10),itemwidth=40)
+        template='plotly_dark',
+        hovermode='x',
+        legend=dict(orientation="h", yanchor="top", y=1.02, xanchor="left", x=0, font=dict(size=10), itemwidth=40)
     )
-    fig.write_html('combined.html')
+    return fig
 
 # Main execution for first snippet
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
@@ -138,10 +137,12 @@ data_dict = load_files(file_pattern)
 for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
-p90_api = calculate_p90(filtered_data_dict)
-scatter = plot_production(filtered_data_dict, p90_api)
-cum_graph = plot_cumulative_production(filtered_data_dict, p90_api)
-combine_plots(scatter, cum_graph, p90_api)
+p50_api = calculate_p50(filtered_data_dict)
+
+scatter = plot_production(filtered_data_dict, p50_api)
+cum_graph = plot_cumulative_production(filtered_data_dict, p50_api)
+combined_fig = combine_plots(scatter, cum_graph, p50_api)
+combined_fig.write_html('combined.html')
 
 # Second snippet functions and execution
 columns = [
@@ -252,7 +253,7 @@ html_template = f"""
         .legend {{
             position: absolute;
             bottom: 10px;
-            right: 10px;
+            left: 10px;
             z-index: 1000;
             background: white;
             padding: 10px;
@@ -286,10 +287,10 @@ html_template += f"""
         </select>
     </div>
     <div id="map"></div>
+    <div class="legend" id="legend"></div>
     <div id="plots">
         <iframe src="combined.html" width="100%" height="100%" style="border:none;"></iframe>
     </div>
-    <div class="legend" id="legend"></div>
     <script>
         var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
 
@@ -356,6 +357,9 @@ for col in avg_col_names:
             style: style_{avg_col_name},
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.on('click', function(e) {{
+                    updatePlots(feature.properties['API 14']);
+                }});
             }}
         }});
         window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
@@ -370,6 +374,9 @@ for col in avg_col_names:
             style: style2_{avg_col_name},
             onEachFeature: function (feature, layer) {{
                 layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
+                layer.on('click', function(e) {{
+                    updatePlots(feature.properties['API 14']);
+                }});
             }}
         }});
         window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
@@ -393,9 +400,30 @@ html_template += """
             if (currentLayer) {
                 currentLayer.addTo(map);
                 var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormapSet[selectedLayer.split('_')[1]], [15,30,45,60,75,90]);
+                updateLegend(colormapSet[selectedLayer.split('_')[1]], [0,30,60,90,120,150]);
             } else {
                 console.error('Layer not found:', selectedLayer);
+            }
+        }
+
+        function updatePlots(api) {
+            console.log('Selected API:', api);
+            var scatter = document.querySelector('iframe').contentWindow.scatter;
+            var cum_graph = document.querySelector('iframe').contentWindow.cum_graph;
+
+            // Update scatter and cum_graph with the selected API
+            // Assuming the scatter and cum_graph variables are defined globally in the iframe content
+
+            if (scatter && cum_graph) {
+                // Update the figures here
+                scatter.data = [];
+                cum_graph.data = [];
+                // Call the plot functions with the selected API
+                var updated_scatter = plot_production(filtered_data_dict, [api]);
+                var updated_cum_graph = plot_cumulative_production(filtered_data_dict, [api]);
+                combine_plots(updated_scatter, updated_cum_graph, [api]);
+                document.querySelector('iframe').contentWindow.scatter = updated_scatter;
+                document.querySelector('iframe').contentWindow.cum_graph = updated_cum_graph;
             }
         }
 
