@@ -127,9 +127,9 @@ def combine_plots(scatter, cum_graph, api):
         yaxis_title='Production / Cum Production',
         template='plotly_dark',
         hovermode='x',
-        legend=dict(orientation="h", yanchor="top", y=1.02, xanchor="left", x=0, font=dict(size=10), itemwidth=40)
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, font=dict(size=10), itemwidth=40)
     )
-    return fig
+    fig.write_html('combined.html')
 
 # Main execution for first snippet
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
@@ -139,10 +139,9 @@ for month in data_dict:
 filtered_data_dict = filter_wells(data_dict)
 p50_api = calculate_p50(filtered_data_dict)
 
-scatter = plot_production(filtered_data_dict, p50_api)
-cum_graph = plot_cumulative_production(filtered_data_dict, p50_api)
-combined_fig = combine_plots(scatter, cum_graph, p50_api)
-combined_fig.write_html('combined.html')
+scatter = plot_production(filtered_data_dict, [30025428950000])
+cum_graph = plot_cumulative_production(filtered_data_dict, [30025428950000])
+combine_plots(scatter, cum_graph, [30025428950000])
 
 # Second snippet functions and execution
 columns = [
@@ -263,6 +262,7 @@ html_template = f"""
     </style>
     <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
     <script src=https://d3js.org/d3.v5.min.js></script>
+    <script src=https://cdn.plot.ly/plotly-latest.min.js></script>
 </head>
 <body>
     <div id="controls">
@@ -289,7 +289,8 @@ html_template += f"""
     <div id="map"></div>
     <div class="legend" id="legend"></div>
     <div id="plots">
-        <iframe src="combined.html" width="100%" height="100%" style="border:none;"></iframe>
+        <div id="scatter_plot"></div>
+        <div id="cum_graph"></div>
     </div>
     <script>
         var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
@@ -408,23 +409,15 @@ html_template += """
 
         function updatePlots(api) {
             console.log('Selected API:', api);
-            var scatter = document.querySelector('iframe').contentWindow.scatter;
-            var cum_graph = document.querySelector('iframe').contentWindow.cum_graph;
 
-            // Update scatter and cum_graph with the selected API
-            // Assuming the scatter and cum_graph variables are defined globally in the iframe content
-
-            if (scatter && cum_graph) {
-                // Update the figures here
-                scatter.data = [];
-                cum_graph.data = [];
-                // Call the plot functions with the selected API
-                var updated_scatter = plot_production(filtered_data_dict, [api]);
-                var updated_cum_graph = plot_cumulative_production(filtered_data_dict, [api]);
-                combine_plots(updated_scatter, updated_cum_graph, [api]);
-                document.querySelector('iframe').contentWindow.scatter = updated_scatter;
-                document.querySelector('iframe').contentWindow.cum_graph = updated_cum_graph;
-            }
+            // Make an AJAX call to fetch the updated plots based on the selected API
+            fetch(`update_plots?api=${api}`)
+                .then(response => response.json())
+                .then(data => {
+                    Plotly.react('scatter_plot', data.scatter);
+                    Plotly.react('cum_graph', data.cum_graph);
+                })
+                .catch(error => console.error('Error updating plots:', error));
         }
 
         function updateLegend(colormap, domain) {
@@ -470,6 +463,9 @@ html_template += """
         }
 
         updateLegend(colormaps['avg_6_months'], [15,30,45,60,75,90]);
+
+        // Initialize the plots with the provided API
+        updatePlots(30025428950000);
     </script>
 </body>
 </html>
