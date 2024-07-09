@@ -59,7 +59,6 @@ def load_geo_data(df, shapefile):
     shape_data = gpd.read_file(shapefile)
     shape_data.to_crs(epsg=4326, inplace=True)
     joined = gpd.sjoin(geo_df, shape_data, how='left', predicate='within')
-    joined['index_right'] = joined.index
     return joined, shape_data
 
 def calculate_avg_values(joined, shape_data, columns):
@@ -67,7 +66,7 @@ def calculate_avg_values(joined, shape_data, columns):
     for col in columns[3:]:
         months = col.split()[2]
         avg_col_name = f'avg_{months}_months'
-        shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
+        shape_data[avg_col_name] = joined.groupby(joined.index)['API 14'].mean()
         avg_col_names.append(avg_col_name)
     return shape_data, avg_col_names
 
@@ -127,7 +126,7 @@ def plot_map(shape_data, avg_col_names):
         geo_data=shape_data.to_json(),
         name='choropleth',
         data=shape_data,
-        columns=['index_right'] + avg_col_names,
+        columns=['index'] + avg_col_names,
         key_on='feature.id',
         fill_color='YlOrRd',
         fill_opacity=0.7,
