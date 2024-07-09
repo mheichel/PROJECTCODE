@@ -5,11 +5,12 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import json
+from tqdm import tqdm
 
 def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
-    for file in files:
+    for file in tqdm(files, desc="Loading and preprocessing data"):
         df = pd.read_csv(file, low_memory=False)
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(by=['API 14', 'Date'])
@@ -32,7 +33,7 @@ def filter_valid_wells(data):
 
 def aggregate_data(data):
     aggregated_data = {}
-    for month, df in data.items():
+    for month, df in tqdm(data.items(), desc="Aggregating data"):
         aggregated_data[month] = df.groupby('Normalized Month').agg({
             'Oil Production (BBL/M)': 'mean',
             'Cumulative Production': 'mean',
@@ -278,10 +279,17 @@ def save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_dat
     print("HTML file created successfully: combined_output.html")
 
 # Main execution
+print("Starting data processing...")
+
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
 data_dict = load_and_preprocess_data(file_pattern)
+print("Data loaded and preprocessed.")
+
 filtered_data_dict = filter_valid_wells(data_dict)
+print("Valid wells filtered.")
+
 aggregated_data = aggregate_data(filtered_data_dict)
+print("Data aggregated.")
 
 # Load well data
 columns = [
@@ -292,22 +300,27 @@ columns = [
     'EUR/PLL (BBL/FT) 60 Months'
 ]
 wells_df = load_wells_data('AllWellsNoError.csv', columns)
+print("Well data loaded.")
 
 # Load and process geospatial data
 joined, shape_data = load_geo_data(wells_df, 'PLSSFirstDivision.geojson')
 shape_data, avg_col_names = calculate_avg_values(joined, shape_data, columns)
 colormaps = create_colormaps(shape_data, avg_col_names)
 geojson_data = {col: json.loads(shape_data[['geometry', col]].to_json()) for col in avg_col_names}
+print("First shapefile processed.")
 
 # Process second shapefile
 joined2, shape_data2 = load_geo_data(wells_df, 'PLSSTownship.geojson')
 shape_data2, avg_col_names = calculate_avg_values(joined2, shape_data2, columns)
 colormaps2 = create_colormaps(shape_data2, avg_col_names)
 geojson_data2 = {col: json.loads(shape_data2[['geometry', col]].to_json()) for col in avg_col_names}
+print("Second shapefile processed.")
 
 # Calculate mean latitude and longitude for map centering
 mean_latitude = wells_df['latitude'].mean()
 mean_longitude = wells_df['longitude'].mean()
+print("Mean latitude and longitude calculated.")
 
 # Save the HTML file
 save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_data, mean_latitude, mean_longitude, avg_col_names)
+print("HTML file saved.")
