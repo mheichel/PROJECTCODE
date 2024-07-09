@@ -129,7 +129,7 @@ def combine_plots(scatter, cum_graph, api):
         hovermode='x',
         legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, font=dict(size=10), itemwidth=40)
     )
-    fig.write_html('combined.html')
+    return fig
 
 # Main execution for first snippet
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
@@ -141,7 +141,8 @@ p50_api = calculate_p50(filtered_data_dict)
 
 scatter = plot_production(filtered_data_dict, [30025428950000])
 cum_graph = plot_cumulative_production(filtered_data_dict, [30025428950000])
-combine_plots(scatter, cum_graph, [30025428950000])
+combined_fig = combine_plots(scatter, cum_graph, [30025428950000])
+combined_fig.write_html('combined.html')
 
 # Second snippet functions and execution
 columns = [
@@ -410,12 +411,12 @@ html_template += """
         function updatePlots(api) {
             console.log('Selected API:', api);
 
-            // Make an AJAX call to fetch the updated plots based on the selected API
-            fetch(`update_plots?api=${api}`)
+            // Fetch the updated plot data
+            fetch(`http://localhost:5000/update_plots?api=${api}`)
                 .then(response => response.json())
                 .then(data => {
-                    Plotly.react('scatter_plot', data.scatter);
-                    Plotly.react('cum_graph', data.cum_graph);
+                    Plotly.react('scatter_plot', JSON.parse(data.scatter));
+                    Plotly.react('cum_graph', JSON.parse(data.cum_graph));
                 })
                 .catch(error => console.error('Error updating plots:', error));
         }
