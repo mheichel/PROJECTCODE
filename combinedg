@@ -1,6 +1,5 @@
-import dask.dataframe as dd
+import polars as pl
 import plotly.graph_objs as go
-import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import json
@@ -10,49 +9,52 @@ def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
     for file in tqdm(files, desc="Loading and preprocessing data"):
-        df = dd.read_csv(file, assume_missing=True)
-        df['Date'] = dd.to_datetime(df['Date'])
-        df = df.sort_values(by=['API 14', 'Date'])
-        df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
-        df = df[df['Normalized Month'] <= 300]  # Cut off data at 300 months
+        df = pl.read_csv(file)
+        df = df.with_column(pl.col("Date").str.strptime(pl.Date, fmt="%Y-%m-%d"))
+        df = df.sort(["API 14", "Date"])
+        df = df.with_column(pl.arange(1, df.height + 1).over("API 14").alias("Normalized Month"))
+        df = df.filter(pl.col("Normalized Month") <= 300)  # Cut off data at 300 months
         month_count = int(file.split('_')[2])
-        df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
-        df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
-        data[month_count] = df.compute()
+        df = df.with_columns([
+            pl.col("Oil Production (BBL/M)").cumsum().over("API 14").alias("Cumulative Production"),
+            pl.col("Oil Forecast (BBL/M)").cumsum().over("API 14").alias("Cumulative Forecast")
+        ])
+        data[month_count] = df
     return data
 
 def filter_valid_wells(data):
-    api_60 = data[60]['API 14'].unique() if 60 in data else []
-    api_6 = data[6]['API 14'].unique() if 6 in data else []
+    api_60 = data[60]["API 14"].unique().to_list() if 60 in data else []
+    api_6 = data[6]["API 14"].unique().to_list() if 6 in data else []
     valid_apis = set(api_6).intersection(api_60)
     
     filtered_data = {}
     for month, df in data.items():
-        filtered_data[month] = df[df['API 14'].isin(valid_apis)]
+        filtered_data[month] = df.filter(pl.col("API 14").is_in(valid_apis))
     return filtered_data
 
 def aggregate_data(data):
     aggregated_data = {}
     for month, df in tqdm(data.items(), desc="Aggregating data"):
-        aggregated_data[month] = df.groupby('Normalized Month').agg({
-            'Oil Production (BBL/M)': 'mean',
-            'Cumulative Production': 'mean',
-            'Oil Forecast (BBL/M)': 'mean',
-            'Cumulative Forecast': 'mean'
-        }).reset_index().to_dict(orient='records')
+        aggregated_df = df.groupby("Normalized Month").agg([
+            pl.col("Oil Production (BBL/M)").mean().alias("Oil Production (BBL/M)"),
+            pl.col("Cumulative Production").mean().alias("Cumulative Production"),
+            pl.col("Oil Forecast (BBL/M)").mean().alias("Oil Forecast (BBL/M)"),
+            pl.col("Cumulative Forecast").mean().alias("Cumulative Forecast")
+        ])
+        aggregated_data[month] = aggregated_df.to_dict(as_series=False)
     return aggregated_data
 
 def load_wells_data(filename, columns):
-    df = dd.read_csv(filename, usecols=columns, assume_missing=True).compute()
-    df = df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-    df = df[(df['latitude'] > 0.1)]
+    df = pl.read_csv(filename, columns=columns)
+    df = df.rename({"Surface Longitude": "longitude", "Surface Latitude": "latitude"})
+    df = df.filter(pl.col("latitude") > 0.1)
     for col in columns[3:]:
-        df = df[(df[col] > 0.1) & (df[col] < np.nanpercentile(df[col], 95))]
-    return df.reset_index()
+        df = df.filter((pl.col(col) > 0.1) & (pl.col(col) < df[col].quantile(0.95)))
+    return df
 
 def load_geo_data(df, shapefile):
-    geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]
-    geo_df = gpd.GeoDataFrame(df, geometry=geometry)
+    geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
+    geo_df = gpd.GeoDataFrame(df.to_pandas(), geometry=geometry)
     geo_df.set_crs(epsg=4326, inplace=True)
     shape_data = gpd.read_file(shapefile)
     shape_data.to_crs(epsg=4326, inplace=True)
