@@ -16,6 +16,7 @@ def load_and_preprocess_data(file_pattern):
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(by=['API 14', 'Date'])
         df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
+        df = df[df['Normalized Month'] <= 300]  # Cut off data at 300 months
         month_count = int(file.split('_')[2])
         df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
         df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
@@ -45,7 +46,10 @@ def aggregate_data(data):
 
 def load_wells_data(filename, columns):
     chunks = pd.read_csv(filename, usecols=columns, chunksize=10000)
-    df = pd.concat(chunks)
+    df_list = []
+    for chunk in tqdm(chunks, desc="Loading well data"):
+        df_list.append(chunk)
+    df = pd.concat(df_list)
     df = df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
     df = df[(df['latitude'] > 0.1)]
     for col in columns[3:]:
@@ -305,13 +309,14 @@ wells_df = load_wells_data('AllWellsNoError.csv', columns)
 print("Well data loaded.")
 
 # Load and process geospatial data
+print("Loading and processing first shapefile...")
 joined, shape_data = load_geo_data(wells_df, 'PLSSFirstDivision.geojson')
 shape_data, avg_col_names = calculate_avg_values(joined, shape_data, columns)
 colormaps = create_colormaps(shape_data, avg_col_names)
 geojson_data = {col: json.loads(shape_data[['geometry', col]].to_json()) for col in avg_col_names}
 print("First shapefile processed.")
 
-# Process second shapefile
+print("Loading and processing second shapefile...")
 joined2, shape_data2 = load_geo_data(wells_df, 'PLSSTownship.geojson')
 shape_data2, avg_col_names = calculate_avg_values(joined2, shape_data2, columns)
 colormaps2 = create_colormaps(shape_data2, avg_col_names)
