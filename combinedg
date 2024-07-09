@@ -13,17 +13,20 @@ def load_and_preprocess_data(file_pattern):
     data = {}
     for file in tqdm(files, desc="Loading and preprocessing data"):
         df = pl.read_csv(file)
-        df = df.select([
-            pl.col("Date").str.strptime("%Y-%m-%d").alias("Date"),
-            pl.col("*")
-        ]).sort(["API 14", "Date"])
-        df = df.with_columns([
-            pl.arange(1, df.height + 1).over("API 14").alias("Normalized Month"),
-            pl.col("Oil Production (BBL/M)").cumsum().over("API 14").alias("Cumulative Production"),
-            pl.col("Oil Forecast (BBL/M)").cumsum().over("API 14").alias("Cumulative Forecast")
-        ])
+        df = df.with_column(
+            pl.col("Date").str.strptime(pl.Date, fmt="%Y-%m-%d")
+        )
+        df = df.sort(["API 14", "Date"])
+        df = df.with_column(
+            pl.arange(1, df.height + 1).over("API 14").alias("Normalized Month")
+        )
         df = df.filter(pl.col("Normalized Month") <= 300)  # Cut off data at 300 months
         month_count = int(file.split('_')[2])
+        df = df.with_column(
+            pl.col("Oil Production (BBL/M)").cumsum().over("API 14").alias("Cumulative Production")
+        ).with_column(
+            pl.col("Oil Forecast (BBL/M)").cumsum().over("API 14").alias("Cumulative Forecast")
+        )
         data[month_count] = df
     return data
 
