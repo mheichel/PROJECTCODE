@@ -6,6 +6,7 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import branca.colormap as cm
+import json
 from IPython.display import display, HTML
 
 # First snippet functions
@@ -415,8 +416,8 @@ html_template += """
             var scatter_data = plotProduction(data_dict, [api]);
             var cum_graph_data = plotCumulativeProduction(data_dict, [api]);
 
-            Plotly.react('scatter_plot', scatter_data);
-            Plotly.react('cum_graph', cum_graph_data);
+            Plotly.react('scatter_plot', scatter_data.data, scatter_data.layout);
+            Plotly.react('cum_graph', cum_graph_data.data, cum_graph_data.layout);
         }
 
         function updateLegend(colormap, domain) {
@@ -544,7 +545,7 @@ html_template += """
             return cum_graph;
         }
     </script>
-    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict)}</script>
+    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict.to_dict(orient='records'))}</script>
 </body>
 </html>
 """
