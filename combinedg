@@ -59,6 +59,7 @@ def load_geo_data(df, shapefile):
     shape_data = gpd.read_file(shapefile)
     shape_data.to_crs(epsg=4326, inplace=True)
     joined = gpd.sjoin(geo_df, shape_data, how='left', predicate='within')
+    joined['index_right'] = joined.index
     return joined, shape_data
 
 def calculate_avg_values(joined, shape_data, columns):
