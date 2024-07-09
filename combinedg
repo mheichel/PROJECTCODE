@@ -118,8 +118,9 @@ def plot_cumulative_production(aggregated_data, selected_month):
     fig.show()
 
 def plot_map(shape_data, avg_col_names):
-    mean_latitude = shape_data.geometry.y.mean()
-    mean_longitude = shape_data.geometry.x.mean()
+    centroids = shape_data.centroid
+    mean_latitude = centroids.y.mean()
+    mean_longitude = centroids.x.mean()
     m = folium.Map(location=[mean_latitude, mean_longitude], zoom_start=10)
     folium.Choropleth(
         geo_data=shape_data.to_json(),
