@@ -411,14 +411,12 @@ html_template += """
         function updatePlots(api) {
             console.log('Selected API:', api);
 
-            // Fetch the updated plot data
-            fetch(`http://localhost:5000/update_plots?api=${api}`)
-                .then(response => response.json())
-                .then(data => {
-                    Plotly.react('scatter_plot', JSON.parse(data.scatter));
-                    Plotly.react('cum_graph', JSON.parse(data.cum_graph));
-                })
-                .catch(error => console.error('Error updating plots:', error));
+            var data_dict = JSON.parse(document.getElementById('data_dict').textContent);
+            var scatter_data = plotProduction(data_dict, [api]);
+            var cum_graph_data = plotCumulativeProduction(data_dict, [api]);
+
+            Plotly.react('scatter_plot', scatter_data);
+            Plotly.react('cum_graph', cum_graph_data);
         }
 
         function updateLegend(colormap, domain) {
@@ -467,7 +465,86 @@ html_template += """
 
         // Initialize the plots with the provided API
         updatePlots(30025428950000);
+
+        // JavaScript functions for plotting
+        function plotProduction(data_dict, api) {
+            var scatter = {
+                data: [],
+                layout: {
+                    title: 'Production Data | API: ' + api,
+                    xaxis: { title: 'Normalized Month' },
+                    yaxis: { title: 'Production' },
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }
+            };
+            for (var month in data_dict) {
+                for (var i = 0; i < api.length; i++) {
+                    var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api[i]; });
+                    if (month == 6) {
+                        scatter.data.push({
+                            x: well_data.map(row => row['Normalized Month']),
+                            y: well_data.map(row => row['Oil Production (BBL/M)']),
+                            mode: 'lines',
+                            name: 'Production'
+                        });
+                    }
+                    scatter.data.push({
+                        x: well_data.map(row => row['Normalized Month']),
+                        y: well_data.map(row => row['Oil Forecast (BBL/M)']),
+                        mode: 'lines',
+                        line: { dash: 'dot' },
+                        name: month + ' Forecast'
+                    });
+                }
+            }
+            return scatter;
+        }
+
+        function plotCumulativeProduction(data_dict, api) {
+            var cum_graph = {
+                data: [],
+                layout: {
+                    title: 'Cumulative Production | API: ' + api,
+                    xaxis: { title: 'Norm Month' },
+                    yaxis: { title: 'Cumulative Production' },
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }
+            };
+            for (var i = 0; i < api.length; i++) {
+                for (var month in data_dict) {
+                    var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api[i]; });
+                    well_data.forEach(function(row, index) {
+                        if (index > 0) {
+                            row['Cumulative Production'] = well_data[index - 1]['Cumulative Production'] + row['Oil Production (BBL/M)'];
+                            row['Cumulative Forecast'] = well_data[index - 1]['Cumulative Forecast'] + row['Oil Forecast (BBL/M)'];
+                        } else {
+                            row['Cumulative Production'] = row['Oil Production (BBL/M)'];
+                            row['Cumulative Forecast'] = row['Oil Forecast (BBL/M)'];
+                        }
+                    });
+                    if (month == 6) {
+                        cum_graph.data.push({
+                            x: well_data.map(row => row['Normalized Month']),
+                            y: well_data.map(row => row['Cumulative Production']),
+                            mode: 'lines',
+                            name: 'Cum Production'
+                        });
+                    }
+                    cum_graph.data.push({
+                        x: well_data.map(row => row['Normalized Month']),
+                        y: well_data.map(row => row['Cumulative Forecast']),
+                        mode: 'lines',
+                        line: { dash: 'dot' },
+                        name: month + ' Cum Forecast'
+                    });
+                }
+            }
+            return cum_graph;
+        }
     </script>
+    <script type="application/json" id="data_dict">{json.dumps(filtered_data_dict)}</script>
 </body>
 </html>
 """
@@ -476,29 +553,3 @@ with open('combined_output.html', 'w') as f:
     f.write(html_template)
 
 print("HTML file created successfully: combined_output.html")
-
-
-
-from flask import Flask, jsonify, request
-import plotly.graph_objs as go
-
-app = Flask(__name__)
-
-@app.route('/update_plots')
-def update_plots():
-    api = request.args.get('api')
-    # Assume `filtered_data_dict` is globally available or load it here
-    scatter = plot_production(filtered_data_dict, [api])
-    cum_graph = plot_cumulative_production(filtered_data_dict, [api])
-
-    scatter_json = scatter.to_json()
-    cum_graph_json = cum_graph.to_json()
-
-    return jsonify({
-        'scatter': scatter_json,
-        'cum_graph': cum_graph_json
-    })
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
