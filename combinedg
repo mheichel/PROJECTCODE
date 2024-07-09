@@ -1,147 +1,3 @@
-import pandas as pd
-import plotly.graph_objs as go
-import plotly.subplots as sp
-import glob
-import numpy as np
-import geopandas as gpd
-from shapely.geometry import Point
-import branca.colormap as cm
-import json
-
-# First snippet functions
-
-def load_files(file_pattern):
-    files = glob.glob(file_pattern)
-    data = {}
-    for file in files:
-        df = pd.read_csv(file, low_memory=False)
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values(by=['API 14', 'Date'])
-        df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
-        month_count = int(file.split('_')[2])
-        data[month_count] = df
-    return data
-
-def calculate_cumulative(df):
-    df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
-    df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
-    return df
-
-def filter_wells(data_dict):
-    filtered_data = {}
-    api_60 = data_dict[60]['API 14'].unique()
-    api_6 = data_dict[6]['API 14'].unique()
-    valid_apis = set(api_6).intersection(api_60)
-    for month, df in data_dict.items():
-        df = df[df['API 14'].isin(valid_apis)]
-        filtered_data[month] = df
-    return filtered_data
-
-def plot_production(data_dict, api):
-    scatter = go.Figure()
-    for month, df in data_dict.items():
-        well_data = df[df['API 14'] == api]
-        scatter.add_trace(go.Scatter(
-            x=well_data['Normalized Month'],
-            y=well_data['Oil Production (BBL/M)'],
-            mode='lines',
-            name=f'{month} Production'
-        ))
-        scatter.add_trace(go.Scatter(
-            x=well_data['Normalized Month'],
-            y=well_data['Oil Forecast (BBL/M)'],
-            mode='lines',
-            line=dict(dash='dot'),
-            name=f'{month} Forecast'
-        ))
-    scatter.update_layout(title=f"Production Data | API: {api}", xaxis_title='Normalized Month', yaxis_title='Production', template='plotly_dark', hovermode='x')
-    return scatter
-
-def plot_cumulative_production(data_dict, api):
-    cum_graph = go.Figure()
-    for month, df in data_dict.items():
-        well_data = df[df['API 14'] == api].copy()
-        well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
-        well_data['Cumulative Forecast'] = well_data['Oil Forecast (BBL/M)'].cumsum()
-        cum_graph.add_trace(go.Scatter(
-            x=well_data['Normalized Month'],
-            y=well_data['Cumulative Production'],
-            mode='lines',
-            name=f'{month} Cum Production'
-        ))
-        cum_graph.add_trace(go.Scatter(
-            x=well_data['Normalized Month'],
-            y=well_data['Cumulative Forecast'],
-            mode='lines',
-            line=dict(dash='dot'),
-            name=f'{month} Cum Forecast'
-        ))
-    cum_graph.update_layout(title=f"Cumulative Production | API: {api}", xaxis_title='Normalized Month', yaxis_title='Cumulative Production', template='plotly_dark', hovermode='x')
-    return cum_graph
-
-def combine_plots(scatter, cum_graph, api):
-    fig = sp.make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=(f'Production Data', 'Cumulative Production'))
-    for trace in scatter.data:
-        fig.add_trace(trace, row=1, col=1)
-    for trace in cum_graph.data:
-        fig.add_trace(trace, row=2, col=1)
-    fig.update_layout(height=900, title_text=f"Production and Cumulative Production | API: {api}", xaxis_title='Normalized Month', yaxis_title='Production / Cumulative Production', template='plotly_dark', hovermode='x', legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, font=dict(size=10), itemwidth=40))
-    return fig
-
-# Main execution
-file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
-data_dict = load_files(file_pattern)
-for month in data_dict:
-    data_dict[month] = calculate_cumulative(data_dict[month])
-filtered_data_dict = filter_wells(data_dict)
-
-scatter = plot_production(filtered_data_dict, 30025428950000)
-cum_graph = plot_cumulative_production(filtered_data_dict, 30025428950000)
-combined_fig = combine_plots(scatter, cum_graph, 30025428950000)
-combined_fig.write_html('combined.html')
-
-# Second snippet functions and execution
-columns = [
-    'API 14', 'Surface Longitude', 'Surface Latitude',
-    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
-    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
-    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
-    'EUR/PLL (BBL/FT) 60 Months'
-]
-wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
-wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-wells_df = wells_df[wells_df['latitude'] > 0.1]
-for col in columns[3:]:
-    wells_df = wells_df[wells_df[col] > 0.1]
-    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
-wells_df = wells_df.reset_index()
-mean_latitude = wells_df['latitude'].mean()
-mean_longitude = wells_df['longitude'].mean()
-geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
-geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
-geo_data.set_crs(epsg=4326, inplace=True)
-shape_data = gpd.read_file('PLSSFirstDivision.geojson')
-shape_data.to_crs(epsg=4326, inplace=True)
-joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
-avg_col_names=[]
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-colormaps = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'], vmin=shape_data[avg_col_name].min(), vmax=90, caption=f'EUR Value ({col})')
-geojson_data = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
-
-html_template = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -152,22 +8,24 @@ html_template = f"""
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://d3js.org/d3.v5.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-omnivore/0.3.4/leaflet-omnivore.min.js"></script>
     <style>
-        html, body {{
+        html, body {
             height: 100%;
             margin: 0;
-        }}
-        #map {{
+        }
+        #map {
             width: 50%;
             height: 100%;
             float: left;
-        }}
-        #plots {{
+        }
+        #plots {
             width: 50%;
             height: 100%;
             float: left;
-        }}
-        #controls {{
+        }
+        #controls {
             position: absolute;
             top: 10px;
             left: 60px;
@@ -176,8 +34,8 @@ html_template = f"""
             padding: 10px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .legend {{
+        }
+        .legend {
             position: absolute;
             bottom: 10px;
             left: 10px;
@@ -186,24 +44,22 @@ html_template = f"""
             padding: 10px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
+        }
     </style>
 </head>
 <body>
     <div id="controls">
         <select id="layer-select" onchange="updateMap()">
-"""
-
-html_template += '<optgroup label="Sections">\n'
-for col in avg_col_names:
-    html_template += f'<option value="1_{col}">{col.split("_")[1]}</option>\n'
-html_template += '</optgroup>\n'
-html_template += '<optgroup label="Townships">\n'
-for col in avg_col_names:
-    html_template += f'<option value="2_{col}">{col.split("_")[1]}</option>\n'
-html_template += '</optgroup>\n'
-
-html_template += """
+            <optgroup label="Sections">
+                <option value="1_avg_6_months">6 Months</option>
+                <option value="1_avg_12_months">12 Months</option>
+                <!-- Add other options as needed -->
+            </optgroup>
+            <optgroup label="Townships">
+                <option value="2_avg_6_months">6 Months</option>
+                <option value="2_avg_12_months">12 Months</option>
+                <!-- Add other options as needed -->
+            </optgroup>
         </select>
     </div>
     <div id="map"></div>
@@ -213,7 +69,10 @@ html_template += """
         <div id="cum_graph"></div>
     </div>
     <script>
-        var map = L.map('map').setView([%f, %f], 10);
+        var mean_latitude = 32.7767; // Example latitude
+        var mean_longitude = -96.7970; // Example longitude
+
+        var map = L.map('map').setView([mean_latitude, mean_longitude], 10);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
@@ -222,85 +81,129 @@ html_template += """
 
         var colormaps = {};
         var colormaps2 = {};
-""" % (mean_latitude, mean_longitude)
 
-for col in avg_col_names:
-    html_template += f"""
-        colormaps['{col}'] = d3.scaleThreshold()
-            .domain([15, 30, 45, 60, 75, 90])
-            .range(["white", "blue", "green", "yellow", "orange", "red"]);
-    """
-    html_template += f"""
-        colormaps2['{col}'] = d3.scaleThreshold()
-            .domain([15, 30, 45, 60, 75, 90])
-            .range(["white", "blue", "green", "yellow", "orange", "red"]);
-    """
+        var data_dict = {};
 
-for col in avg_col_names:
-    html_template += f"""
-        function style_{col}(feature) {{
-            return {{
-                fillColor: colormaps['{col}'](feature.properties.{col}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
-    html_template += f"""
-        function style2_{col}(feature) {{
-            return {{
-                fillColor: colormaps2['{col}'](feature.properties.{col}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
-    html_template += f"""
-        var layer_1_{col} = L.geoJson({geojson_data[col]}, {{
-            style: style_{col},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({col.split("_")[1]} Months): ' + feature.properties.{col}.toFixed(2));
-                layer.on('click', function(e) {{
-                    updatePlots(feature.properties['API 14']);
-                }});
-            }}
-        }});
-        window['layer_1_{col}'] = layer_1_{col};
-    """
-    html_template += f"""
-        var layer_2_{col} = L.geoJson({geojson_data[col]}, {{
-            style: style2_{col},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({col.split("_")[1]} Months): ' + feature.properties.{col}.toFixed(2));
-                layer.on('click', function(e) {{
-                    updatePlots(feature.properties['API 14']);
-                }});
-            }}
-        }});
-        window['layer_2_{col}'] = layer_2_{col};
-    """
+        // Function to load CSV files and process them
+        function loadCSVFiles(fileNames, callback) {
+            var filesProcessed = 0;
+            fileNames.forEach(function(fileName) {
+                Papa.parse(fileName, {
+                    download: true,
+                    header: true,
+                    complete: function(results) {
+                        var month = parseInt(fileName.match(/_(\d+)_Months_/)[1]);
+                        results.data.forEach(function(row) {
+                            row['Date'] = new Date(row['Date']);
+                            row['Normalized Month'] = parseInt(row['Normalized Month']);
+                            row['Oil Production (BBL/M)'] = parseFloat(row['Oil Production (BBL/M)']);
+                            row['Oil Forecast (BBL/M)'] = parseFloat(row['Oil Forecast (BBL/M)']);
+                        });
+                        data_dict[month] = results.data;
+                        filesProcessed++;
+                        if (filesProcessed === fileNames.length) {
+                            callback();
+                        }
+                    }
+                });
+            });
+        }
 
-html_template += """
-        var currentLayer = window['layer_1_avg_6_months'];
-        currentLayer.addTo(map);
+        // Function to calculate cumulative production and forecast
+        function calculateCumulative(data) {
+            var apiGroups = data.reduce(function(groups, row) {
+                var api = row['API 14'];
+                if (!groups[api]) {
+                    groups[api] = [];
+                }
+                groups[api].push(row);
+                return groups;
+            }, {});
 
-        function updateMap() {
-            var selectedLayer = document.getElementById('layer-select').value;
-            if (currentLayer) {
-                map.removeLayer(currentLayer);
-            }
-            currentLayer = window['layer_' + selectedLayer];
-            if (currentLayer) {
-                currentLayer.addTo(map);
-                updateLegend(colormaps[selectedLayer.split('_')[1]]);
+            for (var api in apiGroups) {
+                var cumulativeProduction = 0;
+                var cumulativeForecast = 0;
+                apiGroups[api].forEach(function(row) {
+                    cumulativeProduction += row['Oil Production (BBL/M)'];
+                    cumulativeForecast += row['Oil Forecast (BBL/M)'];
+                    row['Cumulative Production'] = cumulativeProduction;
+                    row['Cumulative Forecast'] = cumulativeForecast;
+                });
             }
         }
 
+        // Function to plot production data
+        function plotProduction(data_dict, api) {
+            var scatter = {
+                data: [],
+                layout: {
+                    title: 'Production Data | API: ' + api,
+                    xaxis: { title: 'Normalized Month' },
+                    yaxis: { title: 'Production' },
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }
+            };
+            for (var month in data_dict) {
+                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
+                scatter.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Oil Production (BBL/M)']),
+                    mode: 'lines',
+                    name: month + ' Production'
+                });
+                scatter.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Oil Forecast (BBL/M)']),
+                    mode: 'lines',
+                    line: { dash: 'dot' },
+                    name: month + ' Forecast'
+                });
+            }
+            return scatter;
+        }
+
+        // Function to plot cumulative production data
+        function plotCumulativeProduction(data_dict, api) {
+            var cum_graph = {
+                data: [],
+                layout: {
+                    title: 'Cumulative Production | API: ' + api,
+                    xaxis: { title: 'Normalized Month' },
+                    yaxis: { title: 'Cumulative Production' },
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }
+            };
+            for (var month in data_dict) {
+                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
+                var cumulativeProduction = 0;
+                var cumulativeForecast = 0;
+                well_data.forEach(function(row) {
+                    cumulativeProduction += row['Oil Production (BBL/M)'];
+                    cumulativeForecast += row['Oil Forecast (BBL/M)'];
+                    row['Cumulative Production'] = cumulativeProduction;
+                    row['Cumulative Forecast'] = cumulativeForecast;
+                });
+                cum_graph.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Cumulative Production']),
+                    mode: 'lines',
+                    name: month + ' Cum Production'
+                });
+                cum_graph.data.push({
+                    x: well_data.map(row => row['Normalized Month']),
+                    y: well_data.map(row => row['Cumulative Forecast']),
+                    mode: 'lines',
+                    line: { dash: 'dot' },
+                    name: month + ' Cum Forecast'
+                });
+            }
+            return cum_graph;
+        }
+
+        // Function to update plots based on API
         function updatePlots(api) {
-            console.log('Selected API:', api);
-            var data_dict = JSON.parse(document.getElementById('data_dict').textContent);
             var scatter_data = plotProduction(data_dict, api);
             var cum_graph_data = plotCumulativeProduction(data_dict, api);
 
@@ -308,6 +211,7 @@ html_template += """
             Plotly.react('cum_graph', cum_graph_data.data, cum_graph_data.layout);
         }
 
+        // Function to update legend
         function updateLegend(colormap) {
             var legend = d3.select('#legend');
             legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
@@ -350,79 +254,99 @@ html_template += """
                 .style('fill', 'url(#gradient)');
         }
 
-        updateLegend(colormaps['avg_6_months']);
-
-        function plotProduction(data_dict, api) {
-            var scatter = {
-                data: [],
-                layout: {
-                    title: 'Production Data | API: ' + api,
-                    xaxis: { title: 'Normalized Month' },
-                    yaxis: { title: 'Production' },
-                    template: 'plotly_dark',
-                    hovermode: 'x'
-                }
-            };
-            for (var month in data_dict) {
-                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
-                scatter.data.push({
-                    x: well_data.map(row => row['Normalized Month']),
-                    y: well_data.map(row => row['Oil Production (BBL/M)']),
-                    mode: 'lines',
-                    name: month + ' Production'
-                });
-                scatter.data.push({
-                    x: well_data.map(row => row['Normalized Month']),
-                    y: well_data.map(row => row['Oil Forecast (BBL/M)']),
-                    mode: 'lines',
-                    line: { dash: 'dot' },
-                    name: month + ' Forecast'
-                });
+        // Function to update map based on selected layer
+        function updateMap() {
+            var selectedLayer = document.getElementById('layer-select').value;
+            if (currentLayer) {
+                map.removeLayer(currentLayer);
             }
-            return scatter;
+            currentLayer = window['layer_' + selectedLayer];
+            if (currentLayer) {
+                currentLayer.addTo(map);
+                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
+                updateLegend(colormapSet[selectedLayer.split('_')[1]]);
+            }
         }
 
-        function plotCumulativeProduction(data_dict, api) {
-            var cum_graph = {
-                data: [],
-                layout: {
-                    title: 'Cumulative Production | API: ' + api,
-                    xaxis: { title: 'Normalized Month' },
-                    yaxis: { title: 'Cumulative Production' },
-                    template: 'plotly_dark',
-                    hovermode: 'x'
-                }
-            };
-            for (var month in data_dict) {
-                var well_data = data_dict[month].filter(function(row) { return row['API 14'] == api; });
-                well_data.reduce((acc, row) => {
-                    row['Cumulative Production'] = acc['Cumulative Production'] + row['Oil Production (BBL/M)'];
-                    row['Cumulative Forecast'] = acc['Cumulative Forecast'] + row['Oil Forecast (BBL/M)'];
-                    return row;
-                }, { 'Cumulative Production': 0, 'Cumulative Forecast': 0 });
-                cum_graph.data.push({
-                    x: well_data.map(row => row['Normalized Month']),
-                    y: well_data.map(row => row['Cumulative Production']),
-                    mode: 'lines',
-                    name: month + ' Cum Production'
-                });
-                cum_graph.data.push({
-                    x: well_data.map(row => row['Normalized Month']),
-                    y: well_data.map(row => row['Cumulative Forecast']),
-                    mode: 'lines',
-                    line: { dash: 'dot' },
-                    name: month + ' Cum Forecast'
-                });
-            }
-            return cum_graph;
+        var currentLayer;
+
+        function loadGeoJSONFiles(geojsonFiles, callback) {
+            var filesProcessed = 0;
+            geojsonFiles.forEach(function(file) {
+                fetch(file)
+                    .then(response => response.json())
+                    .then(data => {
+                        var avg_col_name = file.match(/([^\/]+)(?=\.\w+$)/)[0]; // Extract filename without extension
+                        colormaps[avg_col_name] = d3.scaleThreshold()
+                            .domain([15, 30, 45, 60, 75, 90])
+                            .range(["white", "blue", "green", "yellow", "orange", "red"]);
+
+                        colormaps2[avg_col_name] = d3.scaleThreshold()
+                            .domain([15, 30, 45, 60, 75, 90])
+                            .range(["white", "blue", "green", "yellow", "orange", "red"]);
+
+                        function style(feature) {
+                            return {
+                                fillColor: colormaps[avg_col_name](feature.properties[avg_col_name]),
+                                color: 'black',
+                                weight: 0.5,
+                                fillOpacity: 0.7
+                            };
+                        }
+
+                        function style2(feature) {
+                            return {
+                                fillColor: colormaps2[avg_col_name](feature.properties[avg_col_name]),
+                                color: 'black',
+                                weight: 0.5,
+                                fillOpacity: 0.7
+                            };
+                        }
+
+                        window['layer_1_' + avg_col_name] = L.geoJson(data, {
+                            style: style,
+                            onEachFeature: function (feature, layer) {
+                                layer.bindPopup('EUR (' + avg_col_name + '): ' + feature.properties[avg_col_name].toFixed(2));
+                                layer.on('click', function(e) {
+                                    updatePlots(feature.properties['API 14']);
+                                });
+                            }
+                        });
+
+                        window['layer_2_' + avg_col_name] = L.geoJson(data, {
+                            style: style2,
+                            onEachFeature: function (feature, layer) {
+                                layer.bindPopup('EUR (' + avg_col_name + '): ' + feature.properties[avg_col_name].toFixed(2));
+                                layer.on('click', function(e) {
+                                    updatePlots(feature.properties['API 14']);
+                                });
+                            }
+                        });
+
+                        filesProcessed++;
+                        if (filesProcessed === geojsonFiles.length) {
+                            callback();
+                        }
+                    });
+            });
         }
+
+        // Load data and initialize plots
+        var fileNames = ['Delaware_NM_6_Months_Combined_Monthly.csv', 'Delaware_NM_12_Months_Combined_Monthly.csv']; // Add other files as needed
+        var geojsonFiles = ['PLSSFirstDivision.geojson', 'PLSSTownship.geojson']; // Add other geojson files as needed
+
+        loadCSVFiles(fileNames, function() {
+            for (var month in data_dict) {
+                calculateCumulative(data_dict[month]);
+            }
+            loadGeoJSONFiles(geojsonFiles, function() {
+                // Initialize the plots with the provided API
+                currentLayer = window['layer_1_avg_6_months'];
+                currentLayer.addTo(map);
+                updatePlots(30025428950000);
+            });
+        });
+
     </script>
-    <script type="application/json" id="data_dict">{json.dumps({k: v.to_dict(orient='records') for k, v in filtered_data_dict.items()})}</script>
 </body>
 </html>
-"""
-
-with open('combined_output.html', 'w') as f:
-    f.write(html_template)
-
-print("HTML file created successfully: combined_output.html")
