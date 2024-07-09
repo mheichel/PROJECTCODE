@@ -6,8 +6,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import json
 
-# Define functions
-def load_files(file_pattern):
+def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
     for file in files:
@@ -16,42 +15,275 @@ def load_files(file_pattern):
         df = df.sort_values(by=['API 14', 'Date'])
         df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
         month_count = int(file.split('_')[2])
+        df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
+        df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
         data[month_count] = df
     return data
 
-def calculate_cumulative(df):
-    df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
-    df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
-    return df
-
-def filter_wells(data_dict):
-    filtered_data = {}
-    api_60 = data_dict[60]['API 14'].unique() if 60 in data_dict else []
-    api_6 = data_dict[6]['API 14'].unique() if 6 in data_dict else []
+def filter_valid_wells(data):
+    api_60 = data[60]['API 14'].unique() if 60 in data else []
+    api_6 = data[6]['API 14'].unique() if 6 in data else []
     valid_apis = set(api_6).intersection(api_60)
-    for month, df in data_dict.items():
-        df = df[df['API 14'].isin(valid_apis)]
-        filtered_data[month] = df
+    
+    filtered_data = {}
+    for month, df in data.items():
+        filtered_data[month] = df[df['API 14'].isin(valid_apis)]
     return filtered_data
+
+def aggregate_data(data):
+    aggregated_data = {}
+    for month, df in data.items():
+        aggregated_data[month] = df.groupby('Normalized Month').agg({
+            'Oil Production (BBL/M)': 'mean',
+            'Cumulative Production': 'mean',
+            'Oil Forecast (BBL/M)': 'mean',
+            'Cumulative Forecast': 'mean'
+        }).reset_index().to_dict(orient='records')
+    return aggregated_data
+
+def load_wells_data(filename, columns):
+    df = pd.read_csv(filename, usecols=columns)
+    df = df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+    df = df[(df['latitude'] > 0.1)]
+    for col in columns[3:]:
+        df = df[(df[col] > 0.1) & (df[col] < np.nanpercentile(df[col], 95))]
+    return df.reset_index()
+
+def load_geo_data(df, shapefile):
+    geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]
+    geo_df = gpd.GeoDataFrame(df, geometry=geometry)
+    geo_df.set_crs(epsg=4326, inplace=True)
+    shape_data = gpd.read_file(shapefile)
+    shape_data.to_crs(epsg=4326, inplace=True)
+    joined = gpd.sjoin(geo_df, shape_data, how='left', predicate='within')
+    return joined, shape_data
+
+def calculate_avg_values(joined, shape_data, columns):
+    avg_col_names = []
+    for col in columns[3:]:
+        months = col.split()[2]
+        avg_col_name = f'avg_{months}_months'
+        shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
+        avg_col_names.append(avg_col_name)
+    return shape_data, avg_col_names
+
+def create_colormaps(shape_data, avg_col_names):
+    colormaps = {}
+    for col in avg_col_names:
+        colormaps[col] = {
+            'colors': ['blue', 'green', 'yellow', 'orange', 'red'],
+            'vmin': shape_data[col].min(),
+            'vmax': 150,
+            'caption': f'EUR Value ({col})'
+        }
+    return colormaps
+
+def save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_data, mean_latitude, mean_longitude, avg_col_names):
+    html_template = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Combined Output</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+        <style>
+            html, body {{ height: 100%; margin: 0; }}
+            #map {{ width: 50%; height: 100%; float: left; }}
+            #plots {{ width: 50%; height: 100%; float: left; }}
+            #controls {{ position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }}
+            .legend {{ position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }}
+        </style>
+        <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+        <script src="https://d3js.org/d3.v5.min.js"></script>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    </head>
+    <body>
+        <div id="controls">
+            <select id="layer-select" onchange="updateMap()">
+    """
+    html_template += '<optgroup label="Sections">\n'
+    for col in avg_col_names:
+        html_template += f'<option value="1_{col}">{col}</option>\n'
+    html_template += '</optgroup>\n'
+
+    html_template += '<optgroup label="Townships">\n'
+    for col in avg_col_names:
+        html_template += f'<option value="2_{col}">{col}</option>\n'
+    html_template += '</optgroup>\n'
+
+    html_template += f"""
+            </select>
+        </div>
+        <div id="map"></div>
+        <div class="legend" id="legend"></div>
+        <div id="plots">
+            <div id="scatter-plot" style="width:100%; height:50%;"></div>
+            <div id="cumulative-plot" style="width:100%; height:50%;"></div>
+        </div>
+        <script>
+            var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+
+            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+                maxZoom: 18,
+                attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
+            }}).addTo(map);
+
+            var colormaps = {json.dumps(colormaps)};
+            var colormaps2 = {json.dumps(colormaps2)};
+            var geojson_data = {json.dumps(geojson_data)};
+            var geojson_data2 = {json.dumps(geojson_data2)};
+            var aggregated_data = {json.dumps(aggregated_data)};
+            var currentLayer;
+
+            function updatePlots(properties) {{
+                var data = aggregated_data[properties.NormalizedMonth];
+                if (!data) return;
+
+                var scatterData = data.map(function(d) {{
+                    return {{
+                        x: d.NormalizedMonth,
+                        y: d['Oil Production (BBL/M)'],
+                        mode: 'markers+lines',
+                        name: 'Production'
+                    }};
+                }});
+
+                var cumulativeData = data.map(function(d) {{
+                    return {{
+                        x: d.NormalizedMonth,
+                        y: d['Cumulative Production'],
+                        mode: 'markers+lines',
+                        name: 'Cumulative Production'
+                    }};
+                }});
+
+                var scatterLayout = {{
+                    title: "Production Data",
+                    xaxis: {{ title: 'Normalized Month' }},
+                    yaxis: {{ title: 'Production' }},
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }};
+
+                var cumulativeLayout = {{
+                    title: "Cumulative Production",
+                    xaxis: {{ title: 'Normalized Month' }},
+                    yaxis: {{ title: 'Cumulative Production' }},
+                    template: 'plotly_dark',
+                    hovermode: 'x'
+                }};
+
+                Plotly.newPlot('scatter-plot', scatterData, scatterLayout);
+                Plotly.newPlot('cumulative-plot', cumulativeData, cumulativeLayout);
+            }}
+
+            function updateLegend(colormap, domain) {{
+                var legend = d3.select('#legend');
+                legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
+                var legendScale = d3.scaleLinear()
+                    .domain([domain[0], domain[domain.length - 1]])
+                    .range([0, 300]);
+                var legendAxis = d3.axisBottom(legendScale)
+                    .ticks(5)
+                    .tickFormat(d3.format(".2f"));
+
+                var svg = legend.append('svg')
+                    .attr('width', 320)
+                    .attr('height', 50);
+
+                svg.append('g')
+                    .attr('class', 'axis')
+                    .attr('transform', 'translate(10,30)')
+                    .call(legendAxis);
+
+                var gradient = svg.append('defs')
+                    .append('linearGradient')
+                    .attr('id', 'gradient')
+                    .attr('x1', '0%')
+                    .attr('y1', '0%')
+                    .attr('x2', '100%')
+                    .attr('y2', '0%');
+
+                domain.forEach(function(d, i) {{
+                    gradient.append('stop')
+                        .attr('offset', (i / (domain.length - 1) * 100) + '%')
+                        .attr('stop-color', colormap(d));
+                }});
+
+                svg.append('rect')
+                    .attr('width', 300)
+                    .attr('height', 10)
+                    .attr('x', 10)
+                    .attr('y', 20)
+                    .style('fill', 'url(#gradient)');
+            }}
+
+            function styleFactory(colormapName, dataKey) {{
+                return function (feature) {{
+                    var colormap = colormaps[colormapName];
+                    return {{
+                        fillColor: d3.scaleThreshold()
+                            .domain([30, 60, 90, 120, 150, 180])
+                            .range(colormap.colors)(feature.properties[dataKey]),
+                        color: 'black',
+                        weight: 0.5,
+                        fillOpacity: 0.7
+                    }};
+                }};
+            }}
+
+            function onEachFeatureFactory(dataKey) {{
+                return function (feature, layer) {{
+                    layer.on({{
+                        click: function() {{
+                            updatePlots(feature.properties);
+                        }}
+                    }});
+                }};
+            }}
+
+            function addLayer(map, layerName, geojsonData) {{
+                var layer = L.geoJson(geojsonData, {{
+                    style: styleFactory(layerName, layerName),
+                    onEachFeature: onEachFeatureFactory(layerName)
+                }});
+                map.addLayer(layer);
+                return layer;
+            }}
+
+            currentLayer = addLayer(map, 'avg_6_months', geojson_data['avg_6_months']);
+            updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps['avg_6_months'].colors), [30, 60, 90, 120, 150, 180]);
+
+            function updateMap() {{
+                var selectedLayer = document.getElementById('layer-select').value;
+                if (currentLayer) {{
+                    map.removeLayer(currentLayer);
+                }}
+                if (selectedLayer.startsWith('1_')) {{
+                    currentLayer = addLayer(map, selectedLayer, geojson_data[selectedLayer]);
+                }} else {{
+                    currentLayer = addLayer(map, selectedLayer, geojson_data2[selectedLayer]);
+                }}
+                updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps[selectedLayer].colors), [30, 60, 90, 120, 150, 180]);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+
+    with open('combined_output.html', 'w') as f:
+        f.write(html_template)
+
+    print("HTML file created successfully: combined_output.html")
 
 # Main execution
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
-data_dict = load_files(file_pattern)
-for month in data_dict:
-    data_dict[month] = calculate_cumulative(data_dict[month])
-filtered_data_dict = filter_wells(data_dict)
+data_dict = load_and_preprocess_data(file_pattern)
+filtered_data_dict = filter_valid_wells(data_dict)
+aggregated_data = aggregate_data(filtered_data_dict)
 
-# Aggregate filtered data to reduce memory usage
-aggregated_data = {}
-for month, df in filtered_data_dict.items():
-    aggregated_data[month] = df.groupby('Normalized Month').agg({
-        'Oil Production (BBL/M)': 'mean',
-        'Cumulative Production': 'mean',
-        'Oil Forecast (BBL/M)': 'mean',
-        'Cumulative Forecast': 'mean'
-    }).reset_index().to_dict(orient='records')
-
-# Second snippet functions and execution
+# Load well data
 columns = [
     'API 14', 'Surface Longitude', 'Surface Latitude',
     'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
@@ -59,296 +291,23 @@ columns = [
     'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
     'EUR/PLL (BBL/FT) 60 Months'
 ]
-wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
-wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-wells_df = wells_df[wells_df['latitude'] > 0.1]
+wells_df = load_wells_data('AllWellsNoError.csv', columns)
 
-for col in columns[3:]:
-    wells_df = wells_df[wells_df[col] > 0.1]
-    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
+# Load and process geospatial data
+joined, shape_data = load_geo_data(wells_df, 'PLSSFirstDivision.geojson')
+shape_data, avg_col_names = calculate_avg_values(joined, shape_data, columns)
+colormaps = create_colormaps(shape_data, avg_col_names)
+geojson_data = {col: json.loads(shape_data[['geometry', col]].to_json()) for col in avg_col_names}
 
-wells_df = wells_df.reset_index()
+# Process second shapefile
+joined2, shape_data2 = load_geo_data(wells_df, 'PLSSTownship.geojson')
+shape_data2, avg_col_names = calculate_avg_values(joined2, shape_data2, columns)
+colormaps2 = create_colormaps(shape_data2, avg_col_names)
+geojson_data2 = {col: json.loads(shape_data2[['geometry', col]].to_json()) for col in avg_col_names}
+
+# Calculate mean latitude and longitude for map centering
 mean_latitude = wells_df['latitude'].mean()
 mean_longitude = wells_df['longitude'].mean()
-geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
-geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
-geo_data.set_crs(epsg=4326, inplace=True)
-shape_data = gpd.read_file('PLSSFirstDivision.geojson')
-shape_data.to_crs(epsg=4326, inplace=True)
-joined = gpd.sjoin(geo_data, shape_data, how='left', predicate='within')
 
-avg_col_names = []
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-
-shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-colormaps = {}
-for col in avg_col_names:
-    avg_col_name = col
-    colormaps[avg_col_name] = {
-        'colors': ['blue', 'green', 'yellow', 'orange', 'red'],
-        'vmin': shape_data[avg_col_name].min(),
-        'vmax': 150,
-        'caption': f'EUR Value ({col})'
-    }
-
-geojson_data = {}
-for col in avg_col_names:
-    avg_col_name = col
-    geojson_data[avg_col_name] = json.loads(shape_data[['geometry', avg_col_name]].to_json())
-
-shape_data2 = gpd.read_file('PLSSTownship.geojson')
-shape_data2.set_crs(epsg=4326, inplace=True)
-joined2 = gpd.sjoin(geo_data, shape_data2, how='left', predicate='within')
-
-avg_col_names = []
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-
-shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
-colormaps2 = {}
-geojson_data2 = {}
-for col in avg_col_names:
-    avg_col_name = f'{col}'
-    colormaps2[avg_col_name] = {
-        'colors': ['blue', 'green', 'yellow', 'orange', 'red'],
-        'vmin': shape_data2[avg_col_name].min(),
-        'vmax': 150,
-        'caption': f'EUR Value ({col})'
-    }
-    geojson_data2[avg_col_name] = json.loads(shape_data2[['geometry', avg_col_name]].to_json())
-
-# Create the combined HTML file
-html_template = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Combined Output</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <style>
-        html, body {{
-            height: 100%;
-            margin: 0;
-        }}
-        #map {{
-            width: 50%;
-            height: 100%;
-            float: left;
-        }}
-        #plots {{
-            width: 50%;
-            height: 100%;
-            float: left;
-        }}
-        #controls {{
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .legend {{
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-    </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://d3js.org/d3.v5.min.js"></script>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-</head>
-<body>
-    <div id="controls">
-        <select id="layer-select" onchange="updateMap()">
-"""
-
-html_template += '<optgroup label="Sections">\n'
-for col in avg_col_names:
-    html_template += f'<option value="1_{col}">{col}</option>\n'
-html_template += '</optgroup>\n'
-
-html_template += '<optgroup label="Townships">\n'
-for col in avg_col_names:
-    html_template += f'<option value="2_{col}">{col}</option>\n'
-html_template += '</optgroup>\n'
-
-html_template += f"""
-        </select>
-    </div>
-    <div id="map"></div>
-    <div class="legend" id="legend"></div>
-    <div id="plots">
-        <div id="scatter-plot" style="width:100%; height:50%;"></div>
-        <div id="cumulative-plot" style="width:100%; height:50%;"></div>
-    </div>
-    <script>
-        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
-
-        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            maxZoom: 18,
-            attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
-        }}).addTo(map);
-
-        var colormaps = {json.dumps(colormaps)};
-        var colormaps2 = {json.dumps(colormaps2)};
-        var geojson_data = {json.dumps(geojson_data)};
-        var geojson_data2 = {json.dumps(geojson_data2)};
-        var aggregated_data = {json.dumps(aggregated_data)};
-        var currentLayer;
-
-        function updatePlots(properties) {{
-            var data = aggregated_data[properties.NormalizedMonth];
-            if (!data) return;
-
-            var scatterData = data.map(function(d) {{
-                return {{
-                    x: d.NormalizedMonth,
-                    y: d['Oil Production (BBL/M)'],
-                    mode: 'markers+lines',
-                    name: 'Production'
-                }};
-            }});
-
-            var cumulativeData = data.map(function(d) {{
-                return {{
-                    x: d.NormalizedMonth,
-                    y: d['Cumulative Production'],
-                    mode: 'markers+lines',
-                    name: 'Cumulative Production'
-                }};
-            }});
-
-            var scatterLayout = {{
-                title: "Production Data",
-                xaxis: {{ title: 'Normalized Month' }},
-                yaxis: {{ title: 'Production' }},
-                template: 'plotly_dark',
-                hovermode: 'x'
-            }};
-
-            var cumulativeLayout = {{
-                title: "Cumulative Production",
-                xaxis: {{ title: 'Normalized Month' }},
-                yaxis: {{ title: 'Cumulative Production' }},
-                template: 'plotly_dark',
-                hovermode: 'x'
-            }};
-
-            Plotly.newPlot('scatter-plot', scatterData, scatterLayout);
-            Plotly.newPlot('cumulative-plot', cumulativeData, cumulativeLayout);
-        }}
-
-        function updateLegend(colormap, domain) {{
-            var legend = d3.select('#legend');
-            legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
-            var legendScale = d3.scaleLinear()
-                .domain([domain[0], domain[domain.length - 1]])
-                .range([0, 300]);
-            var legendAxis = d3.axisBottom(legendScale)
-                .ticks(5)
-                .tickFormat(d3.format(".2f"));
-
-            var svg = legend.append('svg')
-                .attr('width', 320)
-                .attr('height', 50);
-
-            svg.append('g')
-                .attr('class', 'axis')
-                .attr('transform', 'translate(10,30)')
-                .call(legendAxis);
-
-            var gradient = svg.append('defs')
-                .append('linearGradient')
-                .attr('id', 'gradient')
-                .attr('x1', '0%')
-                .attr('y1', '0%')
-                .attr('x2', '100%')
-                .attr('y2', '0%');
-
-            domain.forEach(function(d, i) {{
-                gradient.append('stop')
-                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
-                    .attr('stop-color', colormap(d));
-            }});
-
-            svg.append('rect')
-                .attr('width', 300)
-                .attr('height', 10)
-                .attr('x', 10)
-                .attr('y', 20)
-                .style('fill', 'url(#gradient)');
-        }}
-
-        function styleFactory(colormapName, dataKey) {{
-            return function (feature) {{
-                var colormap = colormaps[colormapName];
-                return {{
-                    fillColor: d3.scaleThreshold()
-                        .domain([30, 60, 90, 120, 150, 180])
-                        .range(colormap.colors)(feature.properties[dataKey]),
-                    color: 'black',
-                    weight: 0.5,
-                    fillOpacity: 0.7
-                }};
-            }};
-        }}
-
-        function onEachFeatureFactory(dataKey) {{
-            return function (feature, layer) {{
-                layer.on({{
-                    click: function() {{
-                        updatePlots(feature.properties);
-                    }}
-                }});
-            }};
-        }}
-
-        function addLayer(map, layerName, geojsonData) {{
-            var layer = L.geoJson(geojsonData, {{
-                style: styleFactory(layerName, layerName),
-                onEachFeature: onEachFeatureFactory(layerName)
-            }});
-            map.addLayer(layer);
-            return layer;
-        }}
-
-        currentLayer = addLayer(map, 'avg_6_months', geojson_data['avg_6_months']);
-        updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps['avg_6_months'].colors), [30, 60, 90, 120, 150, 180]);
-
-        function updateMap() {{
-            var selectedLayer = document.getElementById('layer-select').value;
-            if (currentLayer) {{
-                map.removeLayer(currentLayer);
-            }}
-            if (selectedLayer.startsWith('1_')) {{
-                currentLayer = addLayer(map, selectedLayer, geojson_data[selectedLayer]);
-            }} else {{
-                currentLayer = addLayer(map, selectedLayer, geojson_data2[selectedLayer]);
-            }}
-            updateLegend(d3.scaleThreshold().domain([30, 60, 90, 120, 150, 180]).range(colormaps[selectedLayer].colors), [30, 60, 90, 120, 150, 180]);
-        }}
-    </script>
-</body>
-</html>
-"""
-
-with open('combined_output.html', 'w') as f:
-    f.write(html_template)
-
-print("HTML file created successfully: combined_output.html")
+# Save the HTML file
+save_html(geojson_data, geojson_data2, colormaps, colormaps2, aggregated_data, mean_latitude, mean_longitude, avg_col_names)
