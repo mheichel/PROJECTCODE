@@ -1,6 +1,5 @@
-import pandas as pd
+import dask.dataframe as dd
 import plotly.graph_objs as go
-import glob
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
@@ -11,16 +10,15 @@ def load_and_preprocess_data(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
     for file in tqdm(files, desc="Loading and preprocessing data"):
-        chunks = pd.read_csv(file, chunksize=10000, low_memory=False)
-        df = pd.concat(chunks)
-        df['Date'] = pd.to_datetime(df['Date'])
+        df = dd.read_csv(file, assume_missing=True)
+        df['Date'] = dd.to_datetime(df['Date'])
         df = df.sort_values(by=['API 14', 'Date'])
         df['Normalized Month'] = df.groupby('API 14').cumcount() + 1
         df = df[df['Normalized Month'] <= 300]  # Cut off data at 300 months
         month_count = int(file.split('_')[2])
         df['Cumulative Production'] = df.groupby('API 14')['Oil Production (BBL/M)'].cumsum()
         df['Cumulative Forecast'] = df.groupby('API 14')['Oil Forecast (BBL/M)'].cumsum()
-        data[month_count] = df
+        data[month_count] = df.compute()
     return data
 
 def filter_valid_wells(data):
@@ -45,11 +43,7 @@ def aggregate_data(data):
     return aggregated_data
 
 def load_wells_data(filename, columns):
-    chunks = pd.read_csv(filename, usecols=columns, chunksize=10000)
-    df_list = []
-    for chunk in tqdm(chunks, desc="Loading well data"):
-        df_list.append(chunk)
-    df = pd.concat(df_list)
+    df = dd.read_csv(filename, usecols=columns, assume_missing=True).compute()
     df = df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
     df = df[(df['latitude'] > 0.1)]
     for col in columns[3:]:
