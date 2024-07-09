@@ -476,3 +476,29 @@ with open('combined_output.html', 'w') as f:
     f.write(html_template)
 
 print("HTML file created successfully: combined_output.html")
+
+
+
+from flask import Flask, jsonify, request
+import plotly.graph_objs as go
+
+app = Flask(__name__)
+
+@app.route('/update_plots')
+def update_plots():
+    api = request.args.get('api')
+    # Assume `filtered_data_dict` is globally available or load it here
+    scatter = plot_production(filtered_data_dict, [api])
+    cum_graph = plot_cumulative_production(filtered_data_dict, [api])
+
+    scatter_json = scatter.to_json()
+    cum_graph_json = cum_graph.to_json()
+
+    return jsonify({
+        'scatter': scatter_json,
+        'cum_graph': cum_graph_json
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
