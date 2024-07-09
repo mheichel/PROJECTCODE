@@ -41,6 +41,11 @@ for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
 
+# Convert filtered data to a dictionary for easy access in JavaScript
+filtered_data_dict_json = {}
+for month, df in filtered_data_dict.items():
+    filtered_data_dict_json[month] = df.to_dict(orient='records')
+
 # Second snippet functions and execution
 columns = [
     'API 14', 'Surface Longitude', 'Surface Latitude',
@@ -199,10 +204,13 @@ html_template += f"""
         var colormaps2 = {json.dumps(colormaps2)};
         var geojson_data = {json.dumps(geojson_data)};
         var geojson_data2 = {json.dumps(geojson_data2)};
+        var data_dict = {json.dumps(filtered_data_dict_json)};
         var currentLayer;
 
         function updatePlots(properties) {{
-            var data = properties.data;
+            var data = data_dict[properties.NormalizedMonth];
+            if (!data) return;
+
             var scatterData = data.map(function(d) {{
                 return {{
                     x: d.NormalizedMonth,
