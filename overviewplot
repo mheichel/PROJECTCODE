@@ -1,0 +1,77 @@
+import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
+import os
+
+def create_multiple_scatter_plots(df, columns_to_plot, output_dir, file_prefix="scatter_plot", title="Scatter Plot with P10, P50, and P90"):
+    # Ensure the output directory exists
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Define the x-axis labels
+    x_labels = [
+        '3 months daily', '3 months monthly', '6 months', '12 months', '18 months',
+        '24 months', '30 months', '36 months', '42 months', '48 months', '54 months', '60 months'
+    ]
+    
+    # Loop through the specified columns and create individual scatter plots
+    for i, col in enumerate(columns_to_plot):
+        # Calculate the P10, P50, and P90 values
+        p10_values = df[col].apply(lambda x: np.percentile(x, 10))
+        p50_values = df[col].apply(lambda x: np.percentile(x, 50))
+        p90_values = df[col].apply(lambda x: np.percentile(x, 90))
+        
+        # Create scatter plot
+        fig = go.Figure()
+        
+        # Add P10 line
+        fig.add_trace(go.Scatter(x=x_labels, y=p10_values, mode='lines+markers', name='P10'))
+        
+        # Add P50 line
+        fig.add_trace(go.Scatter(x=x_labels, y=p50_values, mode='lines+markers', name='P50'))
+        
+        # Add P90 line
+        fig.add_trace(go.Scatter(x=x_labels, y=p90_values, mode='lines+markers', name='P90'))
+        
+        # Update layout
+        fig.update_layout(
+            title=f"{title} - {col}",
+            xaxis_title='Time Periods',
+            yaxis_title='Values',
+            legend_title='Percentiles'
+        )
+        
+        # Save the plot as a PDF
+        file_path = os.path.join(output_dir, f"{file_prefix}_{i+1}.pdf")
+        fig.write_image(file_path)
+
+# Example usage
+# Creating a sample DataFrame
+data = {
+    '3 months daily': np.random.rand(100) * 100,
+    '3 months monthly': np.random.rand(100) * 100,
+    '6 months': np.random.rand(100) * 100,
+    '12 months': np.random.rand(100) * 100,
+    '18 months': np.random.rand(100) * 100,
+    '24 months': np.random.rand(100) * 100,
+    '30 months': np.random.rand(100) * 100,
+    '36 months': np.random.rand(100) * 100,
+    '42 months': np.random.rand(100) * 100,
+    '48 months': np.random.rand(100) * 100,
+    '54 months': np.random.rand(100) * 100,
+    '60 months': np.random.rand(100) * 100
+}
+
+df = pd.DataFrame(data)
+
+# Columns to plot
+columns_to_plot = [
+    '3 months daily', '3 months monthly', '6 months', '12 months', '18 months',
+    '24 months', '30 months', '36 months', '42 months', '48 months', '54 months', '60 months'
+]
+
+# Output directory
+output_dir = "./scatter_plots"
+
+# Call the function
+create_multiple_scatter_plots(df, columns_to_plot, output_dir)
