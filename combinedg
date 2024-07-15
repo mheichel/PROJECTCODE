@@ -1,17 +1,10 @@
-import pandas as pd
+import dash
+from dash import dcc, html, Input, Output, State
 import plotly.graph_objs as go
-import plotly.subplots as sp
-import glob
+import pandas as pd
 import numpy as np
-import geopandas as gpd
-from shapely.geometry import Point
-import branca.colormap as cm
 
-# Color schemes
-actual_color = '#0E5E1E'
-forecast_colors = ['red', 'orangered', 'orange', 'darkkhaki', 'turquoise', 'blue', 'indigo', 'violet', 'darkgray', 'black']
-
-# First snippet functions
+# Load your data
 def load_files(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
@@ -54,7 +47,30 @@ def calculate_p90(data_dict):
     perct90 = df_differences[df_differences['API 14'] == 30025428950000]['Abs Difference']
     return [30025428950000]
 
-def plot_production(data_dict, p90_api, line_colors, line_widths):
+file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
+data_dict = load_files(file_pattern)
+for month in data_dict:
+    data_dict[month] = calculate_cumulative(data_dict[month])
+filtered_data_dict = filter_wells(data_dict)
+p90_api = calculate_p90(filtered_data_dict)
+
+# Default line colors and widths
+line_colors = {
+    'Production': '#0E5E1E',
+    '6 Month Forecast': 'red',
+    '12 Month Forecast': 'orangered',
+    '18 Month Forecast': 'orange',
+    '24 Month Forecast': 'darkkhaki',
+    '30 Month Forecast': 'turquoise',
+    '36 Month Forecast': 'blue',
+    '42 Month Forecast': 'indigo',
+    '48 Month Forecast': 'violet',
+    '54 Month Forecast': 'darkgray',
+    '60 Month Forecast': 'black',
+}
+line_width = 3
+
+def plot_production(data_dict, p90_api, line_colors, line_width):
     scatter = go.Figure()
     df = data_dict
     for month in data_dict.keys():
@@ -65,7 +81,7 @@ def plot_production(data_dict, p90_api, line_colors, line_widths):
                     x=well_data['Normalized Month'],
                     y=well_data['Oil Production (BBL/M)'],
                     mode='lines',
-                    line=dict(color=line_colors['Production'], width=line_widths['Production']),  # Thicker line
+                    line=dict(color=line_colors['Production'], width=line_width),  # Thicker line
                     name='Production'
                 ))
             well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
@@ -74,7 +90,7 @@ def plot_production(data_dict, p90_api, line_colors, line_widths):
                 x=well_data['Normalized Month'],
                 y=well_data['Oil Forecast (BBL/M)'],
                 mode='lines',
-                line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_widths[f'{month} Month Forecast']),  # Thicker line
+                line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_width),  # Thicker line
                 name=f'{month} Month Forecast'
             ))
     scatter.update_layout(
@@ -88,517 +104,58 @@ def plot_production(data_dict, p90_api, line_colors, line_widths):
     scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
     return scatter
 
-def plot_cumulative_production(data_dict, p90_api, line_colors, line_widths):
-    cum_graph = go.Figure()
-    count = 0
-    for api in p90_api:
-        for month in sorted(data_dict.keys()):
-            df = data_dict[month]
-            well_data = df[df['API 14'] == api].reset_index()
-            well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
-            well_data['Cumulative Forecast'] = np.zeros(len(well_data['Cumulative Production']))
-            for i in well_data['Normalized Month']:
-                if i <= month:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Production (BBL/M)'] + well_data.loc[(i-2), 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Production (BBL/M)']
-                else:
-                    if i-1 != 0:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Forecast (BBL/M)'] + well_data.loc[(i-2), 'Cumulative Forecast']
-                    else:
-                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Forecast (BBL/M)']
+# Create the Dash app
+app = dash.Dash(__name__)
 
-            cum_graph.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Cumulative Forecast'],
-                mode='lines',
-                line=dict(dash='longdash', color=line_colors[f'{month} Month Cum Forecast'], width=line_widths[f'{month} Month Cum Forecast']),  # Thicker line
-                name=f'{month} Month Cum Forecast'
-            ))
+app.layout = html.Div([
+    html.Div([
+        html.Label('Line Width:'),
+        dcc.Slider(
+            id='line-width-slider',
+            min=1,
+            max=10,
+            step=1,
+            value=3,
+            marks={i: str(i) for i in range(1, 11)},
+            tooltip={"placement": "bottom", "always_visible": True}
+        ),
+        html.Label('Select Line Color:'),
+        dcc.Dropdown(
+            id='line-color-dropdown',
+            options=[{'label': key, 'value': key} for key in line_colors.keys()],
+            value='Production'
+        ),
+        dcc.Input(
+            id='color-picker',
+            type='color',
+            value='#0E5E1E',
+            style={'margin-top': '10px'}
+        ),
+        html.Label('Search API:'),
+        dcc.Input(
+            id='api-search',
+            type='text',
+            value='30025428950000',
+            style={'margin-top': '10px'}
+        )
+    ], style={'padding': 20, 'flex': 1}),
+    html.Div([
+        dcc.Graph(id='production-plot'),
+    ], style={'padding': 20, 'flex': 3})
+], style={'display': 'flex'})
 
-            if month == 6:
-                cum_graph.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Cumulative Production'],
-                    mode='lines',
-                    line=dict(color=line_colors['Cum Production'], width=line_widths['Cum Production']),  # Thicker line
-                    name='Cum Production'
-                ))
+@app.callback(
+    Output('production-plot', 'figure'),
+    Input('line-width-slider', 'value'),
+    Input('line-color-dropdown', 'value'),
+    Input('color-picker', 'value'),
+    Input('api-search', 'value')
+)
+def update_plot(line_width, line_color_key, line_color_value, api_search):
+    line_colors[line_color_key] = line_color_value
+    p90_api = [api_search]
+    fig = plot_production(filtered_data_dict, p90_api, line_colors, line_width)
+    return fig
 
-            print(f"finished month {month}")
-        count += 1
-    cum_graph.update_layout(
-        title=f"Cumulative Production | API: {p90_api} | Bench: Wolf Camp A | LL: ",
-        yaxis_title='Barrels of Oil',
-        template='plotly_dark',
-        hovermode='x',
-        title_font=dict(family='EMPrint', color='white')
-    )
-    cum_graph.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
-    cum_graph.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
-    return cum_graph
-
-def combine_plots(scatter, cum_graph, p90_api):
-    fig = sp.make_subplots(rows=2, cols=1, vertical_spacing=0.025, subplot_titles=('Production Data [BBL/M]', 'Cumulative Production [BBL]'), shared_xaxes=True, x_title='Normalized Month', y_title='Barrels of Oil')
-    fig.update_yaxes(type='log', gridcolor='#878787', tickcolor='#878787', linecolor='#878787', tickwidth=.01, gridwidth=.01)
-    fig.update_xaxes(gridcolor='#878787', tickcolor='#878787', linecolor='#878787', gridwidth=.01, tickwidth=.01)
-    for trace in scatter.data:
-        fig.add_trace(trace, row=1, col=1)
-    for trace in cum_graph.data:
-        fig.add_trace(trace, row=2, col=1)
-    fig.update_layout(
-        height=1800,
-        title_text=f"| Cum/Monthly Production | API: {p90_api} | Operator: Conocophillips | LL: 6590 FT | FPD: 06/01/2017 | Bench: Wolfcamp B | State: NM | County: Lea |<br>",
-        xaxis_title='',
-        yaxis_title='',
-        hovermode='x',
-        legend=dict(orientation="h", yanchor="bottom", xanchor="left", font=dict(size=11)),
-        paper_bgcolor="#242426",
-        plot_bgcolor="#242426",
-        title_font=dict(family='EMPrint', color='white')
-    )
-    fig.update_annotations(font=dict(color='white'))  # White annotation text
-    # Add annotation for % difference
-    last_month = max(scatter.data[0]['x']) - 1
-    last_prod = scatter.data[-3]['y'][-1]
-    last_forecast6 = scatter.data[-1]['y'][-1]
-    percent_diff = (last_forecast6 - last_prod) / last_prod * 100
-    avg = ((scatter.data[-1]['y'][119]) + (scatter.data[-3]['y'][119])) / 2
-    fig.add_annotation(
-        x=120,
-        y=np.log10(avg),
-        text=f'% Difference 6 Month EUR and 60 Month EUR= {percent_diff:.2f}%',
-        showarrow=True,
-        font=dict(family="EMPrint", size=12, color="#ffffff"),
-        align="center",
-        arrowhead=1,
-        arrowsize=.5,
-        arrowwidth=1,
-        ax=120,
-        ay=np.log10(scatter.data[-1]['y'][119]),
-        xanchor='left',
-        arrowcolor="white",
-        bgcolor="#ff7f0e",
-        opacity=0.8
-    )
-    fig.add_annotation(
-        x=120,
-        y=np.log10(avg),
-        text=f'% Difference 6 Month EUR and 60 Month EUR= {percent_diff:.2f}%',
-        showarrow=True,
-        font=dict(family="Courier New, monospace", size=12, color="#ffffff"),
-        align="center",
-        arrowhead=1,
-        arrowsize=.5,
-        arrowwidth=1,
-        ax=120,
-        ay=np.log10(scatter.data[-3]['y'][119]),
-        xanchor='left',
-        arrowcolor="white",
-        bgcolor="#ff7f0e",
-        opacity=0.8
-    )
-    fig.write_html('combined.html')
-
-# Main execution for first snippet
-file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
-data_dict = load_files(file_pattern)
-for month in data_dict:
-    data_dict[month] = calculate_cumulative(data_dict[month])
-filtered_data_dict = filter_wells(data_dict)
-p90_api = calculate_p90(filtered_data_dict)
-
-# Default line colors and widths
-line_colors = {
-    'Production': '#0E5E1E',
-    'Cum Production': '#0E5E1E',
-    '6 Month Forecast': 'red',
-    '12 Month Forecast': 'orangered',
-    '18 Month Forecast': 'orange',
-    '24 Month Forecast': 'darkkhaki',
-    '30 Month Forecast': 'turquoise',
-    '36 Month Forecast': 'blue',
-    '42 Month Forecast': 'indigo',
-    '48 Month Forecast': 'violet',
-    '54 Month Forecast': 'darkgray',
-    '60 Month Forecast': 'black',
-    '6 Month Cum Forecast': 'red',
-    '12 Month Cum Forecast': 'orangered',
-    '18 Month Cum Forecast': 'orange',
-    '24 Month Cum Forecast': 'darkkhaki',
-    '30 Month Cum Forecast': 'turquoise',
-    '36 Month Cum Forecast': 'blue',
-    '42 Month Cum Forecast': 'indigo',
-    '48 Month Cum Forecast': 'violet',
-    '54 Month Cum Forecast': 'darkgray',
-    '60 Month Cum Forecast': 'black',
-}
-line_widths = {key: 3 for key in line_colors.keys()}
-
-scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths)
-cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths)
-combine_plots(scatter, cum_graph, p90_api)
-
-# Second snippet functions and execution
-columns = [
-    'API 14', 'Surface Longitude', 'Surface Latitude',
-    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
-    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
-    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
-    'EUR/PLL (BBL/FT) 60 Months'
-]
-wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
-wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
-wells_df = wells_df[wells_df['latitude'] > 0.1]
-
-for col in columns[3:]:
-    wells_df = wells_df[wells_df[col] > 0.1]
-    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
-
-wells_df = wells_df.reset_index()
-mean_latitude = wells_df['latitude'].mean()
-mean_longitude = wells_df['longitude'].mean()
-geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
-geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
-geo_data.set_crs(epsg=4326, inplace=True)
-shape_data = gpd.read_file('PLSSFirstDivision.geojson')
-shape_data.to_crs(epsg=4326, inplace=True)
-joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
-
-avg_col_names = []
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-
-shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
-colormaps = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    colormaps[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                vmin=shape_data[avg_col_name].min(),
-                                                vmax=90,
-                                                caption=f'EUR Value ({col})')
-
-geojson_data = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    geojson_data[avg_col_name] = shape_data[['geometry', avg_col_name]].to_json()
-
-shape_data2 = gpd.read_file('PLSSTownship.geojson')
-shape_data2.set_crs(epsg=4326, inplace=True)
-joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
-
-avg_col_names = []
-for col in columns[3:]:
-    months = col.split()[2]
-    avg_col_name = f'avg_{months}_months'
-    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
-    avg_col_names.append(avg_col_name)
-
-shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
-colormaps2 = {}
-geojson_data2 = {}
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    colormaps2[avg_col_name] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
-                                                 vmin=shape_data2[avg_col_name].min(),
-                                                 vmax=90,
-                                                 caption=f'EUR Value ({months})')
-    geojson_data2[avg_col_name] = shape_data2[['geometry', avg_col_name]].to_json()
-
-# Combined HTML creation
-html_template = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Combined Output</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href=https://unpkg.com/leaflet@1.7.1/dist/leaflet.css />
-    <style>
-        html, body {{
-            height: 100%;
-            margin: 0;
-        }}
-        #map {{
-            width: 50%;
-            height: 100%;
-            float: left;
-        }}
-        #plots {{
-            width: 50%;
-            height: 100%;
-            float: left;
-        }}
-        #controls {{
-            position: absolute;
-            top: 10px;
-            left: 60px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .legend {{
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }}
-        .slider-container {{
-            margin-top: 10px;
-        }}
-        .slider-label {{
-            margin-right: 10px;
-        }}
-        .color-picker-container {{
-            margin-top: 10px;
-        }}
-        .color-picker-label {{
-            margin-right: 10px;
-        }}
-    </style>
-    <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
-    <script src=https://d3js.org/d3.v5.min.js></script>
-    <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5.5.3/dist/iro.min.js"></script>
-</head>
-<body>
-    <div id="controls">
-        <select id="layer-select" onchange="updateMap()">
-"""
-
-html_template += '<optgroup label="Sections">\n'
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="1_{avg_col_name}">{months}</option>\n'
-html_template += '</optgroup>\n'
-
-html_template += '<optgroup label="Townships">\n'
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f'<option value="2_{avg_col_name}">{months} </option>\n'
-html_template += '</optgroup>\n'
-
-html_template += f"""
-        </select>
-        <div class="slider-container">
-            <label class="slider-label" for="line-width-slider">Line Width:</label>
-            <input type="range" id="line-width-slider" min="1" max="10" step="1" value="3" onchange="updateLineWidth()">
-        </div>
-        <div class="color-picker-container">
-            <label class="color-picker-label" for="color-picker">Line Color:</label>
-            <input type="color" id="color-picker" value="#0E5E1E" onchange="updateLineColor()">
-        </div>
-        <input type="text" id="api-search" placeholder="Search API" oninput="updateAPI()">
-    </div>
-    <div id="map"></div>
-    <div class="legend" id="legend"></div>
-    <div id="plots">
-        <iframe src="combined.html" width="100%" height="100%" style="border:none;"></iframe>
-    </div>
-    <script>
-        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
-
-        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            maxZoom: 18,
-            attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
-        }}).addTo(map);
-
-        var colormaps = {{}};
-        var colormaps2 = {{}};
-"""
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        colormaps['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([15,30,45,60,75,90])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        colormaps2['{avg_col_name}'] = d3.scaleThreshold()
-            .domain([15,30,45,60,75,90])
-            .range(["white","blue", "green", "yellow", "orange", "red"]);
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = f'{col}'
-    html_template += f"""
-        function style_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        function style2_{avg_col_name}(feature) {{
-            return {{
-                fillColor: colormaps2['{avg_col_name}'](feature.properties.{avg_col_name}),
-                color: 'black',
-                weight: 0.5,
-                fillOpacity: 0.7
-            }};
-        }}
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        var layer_1_{avg_col_name} = L.geoJson({geojson_data[avg_col_name]}, {{
-            style: style_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
-        }});
-        window['layer_1_{avg_col_name}'] = layer_1_{avg_col_name};
-        console.log('Defined layer_1_{avg_col_name}');
-    """
-
-for col in avg_col_names:
-    months = col
-    avg_col_name = col
-    html_template += f"""
-        var layer_2_{avg_col_name} = L.geoJson({geojson_data2[avg_col_name]}, {{
-            style: style2_{avg_col_name},
-            onEachFeature: function (feature, layer) {{
-                layer.bindPopup('EUR ({months} Months): ' + feature.properties.{avg_col_name}.toFixed(2));
-            }}
-        }});
-        window['layer_2_{avg_col_name}'] = layer_2_{avg_col_name};
-        console.log('Defined layer_2_{avg_col_name}');
-    """
-
-html_template += """
-        var currentLayer = window['layer_1_avg_6_months'];
-        currentLayer.addTo(map);
-        console.log('Initialized currentLayer:', currentLayer);
-
-        function updateMap() {
-            var selectedLayer = document.getElementById('layer-select').value;
-            console.log('Selected layer:', selectedLayer);
-            if (currentLayer) {
-                console.log('Removing current layer:', currentLayer);
-                map.removeLayer(currentLayer);
-            }
-            currentLayer = window['layer_' + selectedLayer];
-            console.log('Adding new layer:', currentLayer);
-            if (currentLayer) {
-                currentLayer.addTo(map);
-                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
-                updateLegend(colormaps[selected_layer], [0,30,60,90,120,150]);
-            } else {
-                console.error('Layer not found:', selectedLayer);
-            }
-        }
-
-        function updateLegend(colormap, domain) {
-            var legend = d3.select('#legend');
-            legend.html('<h4>EUR/PLL [BBL/FT]</h4>');
-            var legendScale = d3.scaleLinear()
-                .domain([domain[0], domain[domain.length - 1]])
-                .range([0, 300]);
-
-            var legendAxis = d3.axisBottom(legendScale)
-                .ticks(5)
-                .tickFormat(d3.format(".2f"));
-
-            var svg = legend.append('svg')
-                .attr('width', 320)
-                .attr('height', 50);
-
-            svg.append('g')
-                .attr('class', 'axis')
-                .attr('transform', 'translate(10,30)')
-                .call(legendAxis);
-
-            var gradient = svg.append('defs')
-                .append('linearGradient')
-                .attr('id', 'gradient')
-                .attr('x1', '0%')
-                .attr('y1', '0%')
-                .attr('x2', '100%')
-                .attr('y2', '0%');
-
-            domain.forEach(function(d, i) {
-                gradient.append('stop')
-                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
-                    .attr('stop-color', colormap(d));
-            });
-
-            svg.append('rect')
-                .attr('width', 300)
-                .attr('height', 10)
-                .attr('x', 10)
-                .attr('y', 20)
-                .style('fill', 'url(#gradient)');
-        }
-
-        function updateLineWidth() {
-            var lineWidth = document.getElementById('line-width-slider').value;
-            line_widths['Production'] = lineWidth;
-            line_widths['Cum Production'] = lineWidth;
-            for (var key in line_widths) {
-                line_widths[key] = lineWidth;
-            }
-            // Update the plot with the new line width
-            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            combine_plots(scatter, cum_graph, p90_api);
-        }
-
-        function updateLineColor() {
-            var lineColor = document.getElementById('color-picker').value;
-            line_colors['Production'] = lineColor;
-            line_colors['Cum Production'] = lineColor;
-            // Update the plot with the new line color
-            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            combine_plots(scatter, cum_graph, p90_api);
-        }
-
-        function updateAPI() {
-            var apiSearch = document.getElementById('api-search').value;
-            // Update the map and plots based on the new API search input
-            p90_api = [apiSearch];
-            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
-            combine_plots(scatter, cum_graph, p90_api);
-        }
-
-        updateLegend(colormaps['avg_6_months'], [15,30,45,60,75,90]);
-    </script>
-</body>
-</html>
-"""
-
-with open('combined_output_safe.html', 'w') as f:
-    f.write(html_template)
-
-print("HTML file created successfully: combined_output_safe.html")
+if __name__ == '__main__':
+    app.run_server(debug=True)
