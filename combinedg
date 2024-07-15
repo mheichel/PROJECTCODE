@@ -54,7 +54,7 @@ def calculate_p90(data_dict):
     perct90 = df_differences[df_differences['API 14'] == 30025428950000]['Abs Difference']
     return [30025428950000]
 
-def plot_production(data_dict, p90_api):
+def plot_production(data_dict, p90_api, line_colors, line_widths):
     scatter = go.Figure()
     df = data_dict
     for month in data_dict.keys():
@@ -65,7 +65,7 @@ def plot_production(data_dict, p90_api):
                     x=well_data['Normalized Month'],
                     y=well_data['Oil Production (BBL/M)'],
                     mode='lines',
-                    line=dict(color=actual_color, width=3),  # Thicker line
+                    line=dict(color=line_colors['Production'], width=line_widths['Production']),  # Thicker line
                     name='Production'
                 ))
             well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
@@ -74,7 +74,7 @@ def plot_production(data_dict, p90_api):
                 x=well_data['Normalized Month'],
                 y=well_data['Oil Forecast (BBL/M)'],
                 mode='lines',
-                line=dict(dash='5px 4px', color=forecast_colors[int(month/6)-1], width=3),  # Thicker line
+                line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_widths[f'{month} Month Forecast']),  # Thicker line
                 name=f'{month} Month Forecast'
             ))
     scatter.update_layout(
@@ -88,7 +88,7 @@ def plot_production(data_dict, p90_api):
     scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
     return scatter
 
-def plot_cumulative_production(data_dict, p90_api):
+def plot_cumulative_production(data_dict, p90_api, line_colors, line_widths):
     cum_graph = go.Figure()
     count = 0
     for api in p90_api:
@@ -113,7 +113,7 @@ def plot_cumulative_production(data_dict, p90_api):
                 x=well_data['Normalized Month'],
                 y=well_data['Cumulative Forecast'],
                 mode='lines',
-                line=dict(dash='longdash', color=forecast_colors[int(month/6)-1], width=3),  # Thicker line
+                line=dict(dash='longdash', color=line_colors[f'{month} Month Cum Forecast'], width=line_widths[f'{month} Month Cum Forecast']),  # Thicker line
                 name=f'{month} Month Cum Forecast'
             ))
 
@@ -122,7 +122,7 @@ def plot_cumulative_production(data_dict, p90_api):
                     x=well_data['Normalized Month'],
                     y=well_data['Cumulative Production'],
                     mode='lines',
-                    line=dict(color=actual_color, width=3),  # Thicker line
+                    line=dict(color=line_colors['Cum Production'], width=line_widths['Cum Production']),  # Thicker line
                     name='Cum Production'
                 ))
 
@@ -208,8 +208,36 @@ for month in data_dict:
     data_dict[month] = calculate_cumulative(data_dict[month])
 filtered_data_dict = filter_wells(data_dict)
 p90_api = calculate_p90(filtered_data_dict)
-scatter = plot_production(filtered_data_dict, p90_api)
-cum_graph = plot_cumulative_production(filtered_data_dict, p90_api)
+
+# Default line colors and widths
+line_colors = {
+    'Production': '#0E5E1E',
+    'Cum Production': '#0E5E1E',
+    '6 Month Forecast': 'red',
+    '12 Month Forecast': 'orangered',
+    '18 Month Forecast': 'orange',
+    '24 Month Forecast': 'darkkhaki',
+    '30 Month Forecast': 'turquoise',
+    '36 Month Forecast': 'blue',
+    '42 Month Forecast': 'indigo',
+    '48 Month Forecast': 'violet',
+    '54 Month Forecast': 'darkgray',
+    '60 Month Forecast': 'black',
+    '6 Month Cum Forecast': 'red',
+    '12 Month Cum Forecast': 'orangered',
+    '18 Month Cum Forecast': 'orange',
+    '24 Month Cum Forecast': 'darkkhaki',
+    '30 Month Cum Forecast': 'turquoise',
+    '36 Month Cum Forecast': 'blue',
+    '42 Month Cum Forecast': 'indigo',
+    '48 Month Cum Forecast': 'violet',
+    '54 Month Cum Forecast': 'darkgray',
+    '60 Month Cum Forecast': 'black',
+}
+line_widths = {key: 3 for key in line_colors.keys()}
+
+scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths)
+cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths)
 combine_plots(scatter, cum_graph, p90_api)
 
 # Second snippet functions and execution
@@ -328,9 +356,22 @@ html_template = f"""
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }}
+        .slider-container {{
+            margin-top: 10px;
+        }}
+        .slider-label {{
+            margin-right: 10px;
+        }}
+        .color-picker-container {{
+            margin-top: 10px;
+        }}
+        .color-picker-label {{
+            margin-right: 10px;
+        }}
     </style>
     <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
     <script src=https://d3js.org/d3.v5.min.js></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5.5.3/dist/iro.min.js"></script>
 </head>
 <body>
     <div id="controls">
@@ -353,6 +394,15 @@ html_template += '</optgroup>\n'
 
 html_template += f"""
         </select>
+        <div class="slider-container">
+            <label class="slider-label" for="line-width-slider">Line Width:</label>
+            <input type="range" id="line-width-slider" min="1" max="10" step="1" value="3" onchange="updateLineWidth()">
+        </div>
+        <div class="color-picker-container">
+            <label class="color-picker-label" for="color-picker">Line Color:</label>
+            <input type="color" id="color-picker" value="#0E5E1E" onchange="updateLineColor()">
+        </div>
+        <input type="text" id="api-search" placeholder="Search API" oninput="updateAPI()">
     </div>
     <div id="map"></div>
     <div class="legend" id="legend"></div>
@@ -508,6 +558,38 @@ html_template += """
                 .attr('x', 10)
                 .attr('y', 20)
                 .style('fill', 'url(#gradient)');
+        }
+
+        function updateLineWidth() {
+            var lineWidth = document.getElementById('line-width-slider').value;
+            line_widths['Production'] = lineWidth;
+            line_widths['Cum Production'] = lineWidth;
+            for (var key in line_widths) {
+                line_widths[key] = lineWidth;
+            }
+            // Update the plot with the new line width
+            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            combine_plots(scatter, cum_graph, p90_api);
+        }
+
+        function updateLineColor() {
+            var lineColor = document.getElementById('color-picker').value;
+            line_colors['Production'] = lineColor;
+            line_colors['Cum Production'] = lineColor;
+            // Update the plot with the new line color
+            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            combine_plots(scatter, cum_graph, p90_api);
+        }
+
+        function updateAPI() {
+            var apiSearch = document.getElementById('api-search').value;
+            // Update the map and plots based on the new API search input
+            p90_api = [apiSearch];
+            scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths);
+            combine_plots(scatter, cum_graph, p90_api);
         }
 
         updateLegend(colormaps['avg_6_months'], [15,30,45,60,75,90]);
