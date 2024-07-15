@@ -75,35 +75,49 @@ line_width = 3
 def plot_production(data_dict, p90_api, line_colors, line_width):
     scatter = go.Figure()
     df = data_dict
+    api_found = False
     for month in data_dict.keys():
+        if api_found:
+            break
         for api in p90_api:
-            well_data = df[month][df[month]['API 14'] == api].reset_index()
-            if month == 6:
+            if api in df[month]['API 14'].unique():
+                api_found = True
+                well_data = df[month][df[month]['API 14'] == api].reset_index()
+                if month == 6:
+                    scatter.add_trace(go.Scatter(
+                        x=well_data['Normalized Month'],
+                        y=well_data['Oil Production (BBL/M)'],
+                        mode='lines',
+                        line=dict(color=line_colors['Production'], width=line_width),  # Thicker line
+                        name='Production'
+                    ))
+                well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
+                well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
                 scatter.add_trace(go.Scatter(
                     x=well_data['Normalized Month'],
-                    y=well_data['Oil Production (BBL/M)'],
+                    y=well_data['Oil Forecast (BBL/M)'],
                     mode='lines',
-                    line=dict(color=line_colors['Production'], width=line_width),  # Thicker line
-                    name='Production'
+                    line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_width),  # Thicker line
+                    name=f'{month} Month Forecast'
                 ))
-            well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
-            well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
-            scatter.add_trace(go.Scatter(
-                x=well_data['Normalized Month'],
-                y=well_data['Oil Forecast (BBL/M)'],
-                mode='lines',
-                line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_width),  # Thicker line
-                name=f'{month} Month Forecast'
-            ))
-    scatter.update_layout(
-        title=f"Production Data | API: {p90_api}",
-        yaxis_title='Barrels of Oil',
-        template='plotly_dark',
-        hovermode='x',
-        font=dict(color='white')  # Change text color to white
-    )
-    scatter.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
-    scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+    if not api_found:
+        scatter.update_layout(
+            title=f"API {p90_api[0]} not found",
+            yaxis_title='Barrels of Oil',
+            template='plotly_dark',
+            hovermode='x',
+            font=dict(color='white')
+        )
+    else:
+        scatter.update_layout(
+            title=f"Production Data | API: {p90_api}",
+            yaxis_title='Barrels of Oil',
+            template='plotly_dark',
+            hovermode='x',
+            font=dict(color='white')
+        )
+        scatter.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+        scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
     return scatter
 
 # Create the Dash app
