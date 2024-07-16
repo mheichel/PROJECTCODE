@@ -144,7 +144,7 @@ def combine_plots(scatter, cum_graph, p90_api):
     for trace in cum_graph.data:
         fig.add_trace(trace, row=2, col=1)
     fig.update_layout(
-        height=1800,
+        height=900,  # Reduce the height of the figure
         title_text=f"| Cum/Monthly Production | API: {p90_api} | Operator: Conocophillips | LL: 6590 FT | FPD: 06/01/2017 | Bench: Wolfcamp B | State: NM | County: Lea |<br>",
         xaxis_title='',
         yaxis_title='',
@@ -155,6 +155,9 @@ def combine_plots(scatter, cum_graph, p90_api):
         title_font=dict(family='EMPrint', color='white')
     )
     fig.update_annotations(font=dict(color='white', family='EMPrint'))  # White annotation text
+    fig.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # Ensure x-axis labels are white
+    fig.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # Ensure y-axis labels are white
+    fig.update_layout(legend_font=dict(color='white'))  # Ensure legend labels are white
     return fig
 
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
