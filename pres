@@ -2,3 +2,11 @@ This case highlights a P90 error scenario where the forecasted production rate s
 After 12-18 months, the forecasts begin to overlap and stabilize, indicating a more accurate and reliable prediction.
 As we can see on the graph, our EUR prediction after 60 months of data compared to the forecast after 6 months is almost double
 Although, this may seem alarming, it is important to remember that the bulk of our data is much closer to our p50 case.
+
+
+Our analysis indicates a significant uncertainty in EUR predictions for the initial 6 and 12 months of production data.
+As the production data is extended to about 12-18 months, the uncertainty range significantly tightens, and the predictions become much more stable.
+This stabilization suggests a more reliable forecast after incorporating a sufficient amount of production data.
+Concluding Remarks:
+
+The observed trend remained consistent regardless of how the data was filtered, underscoring the robustness of the findings.
