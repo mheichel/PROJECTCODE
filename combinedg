@@ -59,23 +59,24 @@ def plot_production(data_dict, p90_api, line_colors, line_widths, current_month)
     for month in range(6, current_month + 1, 6):
         for api in p90_api:
             well_data = df[month][df[month]['API 14'] == api].reset_index()
-            if month == 6:
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Oil Production (BBL/M)'],
-                    mode='lines',
-                    line=dict(color=line_colors['Production'], width=line_widths['Production']),  # Thicker line
-                    name='Production'
-                ))
+            production_trace = go.Scatter(
+                x=well_data['Normalized Month'][:month],
+                y=well_data['Oil Production (BBL/M)'][:month],
+                mode='lines',
+                line=dict(color=line_colors['Production'], width=line_widths['Production']),  # Thicker line
+                name=f'{month} Months Production Data'
+            )
+            scatter.add_trace(production_trace)
             well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
             well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
-            scatter.add_trace(go.Scatter(
+            forecast_trace = go.Scatter(
                 x=well_data['Normalized Month'],
                 y=well_data['Oil Forecast (BBL/M)'],
                 mode='lines',
                 line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_widths[f'{month} Month Forecast']),  # Thicker line
                 name=f'{month} Month Forecast'
-            ))
+            )
+            scatter.add_trace(forecast_trace)
     scatter.update_layout(
         title=f"Production Data | API: {p90_api}",
         yaxis_title='Barrels of Oil',
@@ -136,7 +137,7 @@ def plot_cumulative_production(data_dict, p90_api, line_colors, line_widths, cur
     return cum_graph
 
 def combine_plots(scatter, cum_graph, p90_api):
-    fig = sp.make_subplots(rows=2, cols=1, vertical_spacing=0.025, subplot_titles=('Production Data [BBL/M]', 'Cumulative Production [BBL]'), shared_xaxes=True, x_title='Normalized Month', y_title='Barrels of Oil')
+    fig = sp.make_subplots(rows=2, cols=1, vertical_spacing=0.1, subplot_titles=('Production Data [BBL/M]', 'Cumulative Production [BBL]'), shared_xaxes=True, x_title='Normalized Month', y_title='Barrels of Oil')
     fig.update_yaxes(type='log', gridcolor='#878787', tickcolor='#878787', linecolor='#878787', tickwidth=.01, gridwidth=.01)
     fig.update_xaxes(gridcolor='#878787', tickcolor='#878787', linecolor='#878787', gridwidth=.01, tickwidth=.01)
     for trace in scatter.data:
@@ -149,7 +150,7 @@ def combine_plots(scatter, cum_graph, p90_api):
         xaxis_title='',
         yaxis_title='',
         hovermode='x',
-        legend=dict(orientation="h", yanchor="bottom", xanchor="left", font=dict(size=11)),
+        legend=dict(orientation="h", yanchor="top", x=0.5, y=-0.3, xanchor='center', font=dict(size=11)),  # Move legend below the cumulative graph
         paper_bgcolor="#242426",
         plot_bgcolor="#242426",
         title_font=dict(family='EMPrint', color='white')
