@@ -1,0 +1,4 @@
+This case highlights a P90 error scenario where the forecasted production rate significantly increases when the production data is extended to 12-18 months.
+After 12-18 months, the forecasts begin to overlap and stabilize, indicating a more accurate and reliable prediction.
+As we can see on the graph, our EUR prediction after 60 months of data compared to the forecast after 6 months is almost double
+Although, this may seem alarming, it is important to remember that the bulk of our data is much closer to our p50 case.
