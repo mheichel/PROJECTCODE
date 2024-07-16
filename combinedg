@@ -1,12 +1,16 @@
-import dash
-from dash import dcc, html, Input, Output, State
-import dash_daq as daq
-import plotly.graph_objs as go
 import pandas as pd
-import numpy as np
+import plotly.graph_objs as go
+import plotly.subplots as sp
 import glob
+import numpy as np
+import geopandas as gpd
+from shapely.geometry import Point
 
-# Load your data
+# Color schemes
+actual_color = '#0E5E1E'
+forecast_colors = ['red', 'orangered', 'orange', 'darkkhaki', 'turquoise', 'blue', 'indigo', 'violet', 'darkgray', 'black']
+
+# First snippet functions
 def load_files(file_pattern):
     files = glob.glob(file_pattern)
     data = {}
@@ -49,6 +53,110 @@ def calculate_p90(data_dict):
     perct90 = df_differences[df_differences['API 14'] == 30025428950000]['Abs Difference']
     return [30025428950000]
 
+def plot_production(data_dict, p90_api, line_colors, line_widths, current_month):
+    scatter = go.Figure()
+    df = data_dict
+    for month in range(6, current_month + 1, 6):
+        for api in p90_api:
+            well_data = df[month][df[month]['API 14'] == api].reset_index()
+            if month == 6:
+                scatter.add_trace(go.Scatter(
+                    x=well_data['Normalized Month'],
+                    y=well_data['Oil Production (BBL/M)'],
+                    mode='lines',
+                    line=dict(color=line_colors['Production'], width=line_widths['Production']),  # Thicker line
+                    name='Production'
+                ))
+            well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
+            well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
+            scatter.add_trace(go.Scatter(
+                x=well_data['Normalized Month'],
+                y=well_data['Oil Forecast (BBL/M)'],
+                mode='lines',
+                line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_widths[f'{month} Month Forecast']),  # Thicker line
+                name=f'{month} Month Forecast'
+            ))
+    scatter.update_layout(
+        title=f"Production Data | API: {p90_api}",
+        yaxis_title='Barrels of Oil',
+        template='plotly_dark',
+        hovermode='x',
+        font=dict(color='white')  # Change text color to white
+    )
+    scatter.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+    scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+    return scatter
+
+def plot_cumulative_production(data_dict, p90_api, line_colors, line_widths, current_month):
+    cum_graph = go.Figure()
+    count = 0
+    for api in p90_api:
+        for month in range(6, current_month + 1, 6):
+            df = data_dict[month]
+            well_data = df[df['API 14'] == api].reset_index()
+            well_data['Cumulative Production'] = well_data['Oil Production (BBL/M)'].cumsum()
+            well_data['Cumulative Forecast'] = np.zeros(len(well_data['Cumulative Production']))
+            for i in well_data['Normalized Month']:
+                if i <= month:
+                    if i-1 != 0:
+                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Production (BBL/M)'] + well_data.loc[(i-2), 'Cumulative Forecast']
+                    else:
+                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Production (BBL/M)']
+                else:
+                    if i-1 != 0:
+                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Forecast (BBL/M)'] + well_data.loc[(i-2), 'Cumulative Forecast']
+                    else:
+                        well_data.loc[i-1, 'Cumulative Forecast'] = well_data.loc[i-1, 'Oil Forecast (BBL/M)']
+            cum_graph.add_trace(go.Scatter(
+                x=well_data['Normalized Month'],
+                y=well_data['Cumulative Forecast'],
+                mode='lines',
+                line=dict(dash='longdash', color=line_colors[f'{month} Month Cum Forecast'], width=line_widths[f'{month} Month Cum Forecast']),  # Thicker line
+                name=f'{month} Month Cum Forecast'
+            ))
+            if month == 6:
+                cum_graph.add_trace(go.Scatter(
+                    x=well_data['Normalized Month'],
+                    y=well_data['Cumulative Production'],
+                    mode='lines',
+                    line=dict(color=line_colors['Cum Production'], width=line_widths['Cum Production']),  # Thicker line
+                    name='Cum Production'
+                ))
+            print(f"finished month {month}")
+        count += 1
+    cum_graph.update_layout(
+        title=f"Cumulative Production | API: {p90_api} | Bench: Wolf Camp A | LL: ",
+        yaxis_title='Barrels of Oil',
+        template='plotly_dark',
+        hovermode='x',
+        title_font=dict(family='EMPrint', color='white')
+    )
+    cum_graph.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+    cum_graph.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
+    return cum_graph
+
+def combine_plots(scatter, cum_graph, p90_api):
+    fig = sp.make_subplots(rows=2, cols=1, vertical_spacing=0.025, subplot_titles=('Production Data [BBL/M]', 'Cumulative Production [BBL]'), shared_xaxes=True, x_title='Normalized Month', y_title='Barrels of Oil')
+    fig.update_yaxes(type='log', gridcolor='#878787', tickcolor='#878787', linecolor='#878787', tickwidth=.01, gridwidth=.01)
+    fig.update_xaxes(gridcolor='#878787', tickcolor='#878787', linecolor='#878787', gridwidth=.01, tickwidth=.01)
+    for trace in scatter.data:
+        fig.add_trace(trace, row=1, col=1)
+    for trace in cum_graph.data:
+        fig.add_trace(trace, row=2, col=1)
+    fig.update_layout(
+        height=1800,
+        title_text=f"| Cum/Monthly Production | API: {p90_api} | Operator: Conocophillips | LL: 6590 FT | FPD: 06/01/2017 | Bench: Wolfcamp B | State: NM | County: Lea |<br>",
+        xaxis_title='',
+        yaxis_title='',
+        hovermode='x',
+        legend=dict(orientation="h", yanchor="bottom", xanchor="left", font=dict(size=11)),
+        paper_bgcolor="#242426",
+        plot_bgcolor="#242426",
+        title_font=dict(family='EMPrint', color='white')
+    )
+    fig.update_annotations(font=dict(color='white', family='EMPrint'))  # White annotation text
+    return fig
+
 file_pattern = 'Delaware_NM_*_Months_Combined_Monthly.csv'
 data_dict = load_files(file_pattern)
 for month in data_dict:
@@ -59,6 +167,7 @@ p90_api = calculate_p90(filtered_data_dict)
 # Default line colors and widths
 line_colors = {
     'Production': '#0E5E1E',
+    'Cum Production': '#0E5E1E',
     '6 Month Forecast': 'red',
     '12 Month Forecast': 'orangered',
     '18 Month Forecast': 'orange',
@@ -69,108 +178,85 @@ line_colors = {
     '48 Month Forecast': 'violet',
     '54 Month Forecast': 'darkgray',
     '60 Month Forecast': 'black',
+    '6 Month Cum Forecast': 'red',
+    '12 Month Cum Forecast': 'orangered',
+    '18 Month Cum Forecast': 'orange',
+    '24 Month Cum Forecast': 'darkkhaki',
+    '30 Month Cum Forecast': 'turquoise',
+    '36 Month Cum Forecast': 'blue',
+    '42 Month Cum Forecast': 'indigo',
+    '48 Month Cum Forecast': 'violet',
+    '54 Month Cum Forecast': 'darkgray',
+    '60 Month Cum Forecast': 'black',
 }
-line_width = 3
+line_widths = {key: 3 for key in line_colors.keys()}
 
-def plot_production(data_dict, p90_api, line_colors, line_width):
-    scatter = go.Figure()
-    df = data_dict
-    api_found = False
-    for month in data_dict.keys():
-        if api_found:
-            break
-        for api in p90_api:
-            if api in df[month]['API 14'].unique():
-                api_found = True
-                well_data = df[month][df[month]['API 14'] == api].reset_index()
-                if month == 6:
-                    scatter.add_trace(go.Scatter(
-                        x=well_data['Normalized Month'],
-                        y=well_data['Oil Production (BBL/M)'],
-                        mode='lines',
-                        line=dict(color=line_colors['Production'], width=line_width),  # Thicker line
-                        name='Production'
-                    ))
-                well_data.loc[0, 'Oil Forecast (BBL/M)'] = well_data.loc[0, 'Oil Production (BBL/M)']
-                well_data.loc[1, 'Oil Forecast (BBL/M)'] = well_data.loc[1, 'Oil Production (BBL/M)']
-                scatter.add_trace(go.Scatter(
-                    x=well_data['Normalized Month'],
-                    y=well_data['Oil Forecast (BBL/M)'],
-                    mode='lines',
-                    line=dict(dash='5px 4px', color=line_colors[f'{month} Month Forecast'], width=line_width),  # Thicker line
-                    name=f'{month} Month Forecast'
-                ))
-    if not api_found:
-        scatter.update_layout(
-            title=f"API {p90_api[0]} not found",
-            yaxis_title='Barrels of Oil',
-            template='plotly_dark',
-            hovermode='x',
-            font=dict(color='white')
-        )
-    else:
-        scatter.update_layout(
-            title=f"Production Data | API: {p90_api}",
-            yaxis_title='Barrels of Oil',
-            template='plotly_dark',
-            hovermode='x',
-            font=dict(color='white')
-        )
-        scatter.update_xaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
-        scatter.update_yaxes(tickfont=dict(color='white'), titlefont=dict(color='white'))  # White axis labels
-    return scatter
+scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths, 6)
+cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths, 6)
+combine_plots(scatter, cum_graph, p90_api).show()
 
-# Create the Dash app
+# Dash app for interactive plot
+import dash
+from dash import dcc, html
+
 app = dash.Dash(__name__)
 
+# Initialize the application layout
 app.layout = html.Div([
-    html.Div([
-        html.Label('Line Width:'),
-        dcc.Slider(
-            id='line-width-slider',
-            min=1,
-            max=10,
-            step=1,
-            value=3,
-            marks={i: str(i) for i in range(1, 11)},
-            tooltip={"placement": "bottom", "always_visible": True}
-        ),
-        html.Label('Select Line Color:'),
-        dcc.Dropdown(
-            id='line-color-dropdown',
-            options=[{'label': key, 'value': key} for key in line_colors.keys()],
-            value='Production'
-        ),
-        daq.ColorPicker(
-            id='color-picker',
-            value=dict(hex='#0E5E1E'),
-            size=150,
-        ),
-        html.Label('Search API:'),
-        dcc.Input(
-            id='api-search',
-            type='text',
-            value='30025428950000',
-            style={'margin-top': '10px'}
-        )
-    ], style={'padding': 20, 'flex': 1}),
-    html.Div([
-        dcc.Graph(id='production-plot'),
-    ], style={'padding': 20, 'flex': 3})
-], style={'display': 'flex'})
+    dcc.Graph(id='scatter-plot'),
+    dcc.Slider(
+        id='month-slider',
+        min=6,
+        max=60,
+        value=6,
+        marks={i: str(i) for i in range(6, 61, 6)},
+        step=6
+    ),
+    html.Button('Next', id='next-button', n_clicks=0),
+    html.Button('Previous', id='previous-button', n_clicks=0)
+])
 
 @app.callback(
-    Output('production-plot', 'figure'),
-    Input('line-width-slider', 'value'),
-    Input('line-color-dropdown', 'value'),
-    Input('color-picker', 'value'),
-    Input('api-search', 'value')
+    dash.dependencies.Output('scatter-plot', 'figure'),
+    [dash.dependencies.Input('next-button', 'n_clicks'),
+     dash.dependencies.Input('previous-button', 'n_clicks')],
+    [dash.dependencies.State('month-slider', 'value')]
 )
-def update_plot(line_width, line_color_key, line_color_value, api_search):
-    line_colors[line_color_key] = line_color_value['hex']
-    p90_api = [api_search]
-    fig = plot_production(filtered_data_dict, p90_api, line_colors, line_width)
-    return fig
+def update_plot(next_clicks, previous_clicks, current_month):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        button_id = 'No clicks yet'
+    else:
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if button_id == 'next-button':
+        current_month = min(current_month + 6, 60)
+    elif button_id == 'previous-button':
+        current_month = max(current_month - 6, 6)
+    
+    scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths, current_month)
+    cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths, current_month)
+    return combine_plots(scatter, cum_graph, p90_api)
+
+@app.callback(
+    dash.dependencies.Output('month-slider', 'value'),
+    [dash.dependencies.Input('next-button', 'n_clicks'),
+     dash.dependencies.Input('previous-button', 'n_clicks')],
+    [dash.dependencies.State('month-slider', 'value')]
+)
+def update_slider(next_clicks, previous_clicks, current_month):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        button_id = 'No clicks yet'
+    else:
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if button_id == 'next-button':
+        current_month = min(current_month + 6, 60)
+    elif button_id == 'previous-button':
+        current_month = max(current_month - 6, 6)
+    
+    return current_month
 
 if __name__ == '__main__':
     app.run_server(debug=True)
