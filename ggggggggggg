@@ -106,7 +106,7 @@ def plot_cumulative_production(data_dict, p90_api, line_colors, line_widths, cur
                 x=[month],
                 y=[well_data['Cumulative Forecast'].iloc[-1]],
                 mode='markers',
-                marker=dict(color=line_colors[f'{month} Month Cum Forecast'], size=10),
+                marker=dict(color=line_colors[f'{month} Month Cum Forecast'], size=10, line=dict(color='white', width=2)),  # White border around points
                 name=f'{month} Month Cum Forecast',
                 showlegend=False
             ))
@@ -213,10 +213,11 @@ app.layout = html.Div([
 @app.callback(
     dash.dependencies.Output('scatter-plot', 'figure'),
     [dash.dependencies.Input('next-button', 'n_clicks'),
-     dash.dependencies.Input('previous-button', 'n_clicks')],
+     dash.dependencies.Input('previous-button', 'n_clicks'),
+     dash.dependencies.Input('scatter-plot', 'relayoutData')],
     [dash.dependencies.State('month-slider', 'value')]
 )
-def update_plot(next_clicks, previous_clicks, current_month):
+def update_plot(next_clicks, previous_clicks, relayout_data, current_month):
     ctx = dash.callback_context
     if not ctx.triggered:
         button_id = 'No clicks yet'
@@ -230,7 +231,15 @@ def update_plot(next_clicks, previous_clicks, current_month):
    
     scatter = plot_production(filtered_data_dict, p90_api, line_colors, line_widths, current_month)
     cum_graph = plot_cumulative_production(filtered_data_dict, p90_api, line_colors, line_widths, current_month)
-    return combine_plots(scatter, cum_graph, p90_api)
+    fig = combine_plots(scatter, cum_graph, p90_api)
+
+    if relayout_data and 'xaxis.range[0]' in relayout_data:
+        fig.update_layout(
+            xaxis=dict(range=[relayout_data['xaxis.range[0]'], relayout_data['xaxis.range[1]']]),
+            yaxis=dict(range=[relayout_data['yaxis.range[0]'], relayout_data['yaxis.range[1]']])
+        )
+
+    return fig
 
 @app.callback(
     dash.dependencies.Output('month-slider', 'value'),
