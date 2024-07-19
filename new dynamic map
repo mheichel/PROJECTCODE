@@ -1,6 +1,6 @@
 def calculate_percent_error(data_dict):
     percent_errors = {}
-    
+
     # Ensure 60-month data is processed first
     if 60 not in data_dict:
         raise ValueError("60-month data is required to calculate percent errors.")
@@ -14,8 +14,9 @@ def calculate_percent_error(data_dict):
     for month, df in data_dict.items():
         if month != 60:
             cum = df.groupby('API 14')['Cumulative Forecast'].last().reset_index()
-            cum_merged = cum_60.merge(cum, on='API 14', suffixes=('', f'_{month}'))
-            cum_merged[f'Percent Error {month}'] = ((cum_merged[f'Cumulative Forecast_{month}'] - cum_60['Cumulative Forecast 60']) / cum_60['Cumulative Forecast 60']) * 100
+            cum = cum.rename(columns={'Cumulative Forecast': f'Cumulative Forecast {month}'})
+            cum_merged = cum_60.merge(cum, on='API 14')
+            cum_merged[f'Percent Error {month}'] = ((cum_merged[f'Cumulative Forecast {month}'] - cum_60['Cumulative Forecast 60']) / cum_60['Cumulative Forecast 60']) * 100
             percent_errors[month] = cum_merged[['API 14', f'Percent Error {month}']]
     
     # Include the 60-month data in the result
