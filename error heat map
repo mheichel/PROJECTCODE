@@ -1,0 +1,314 @@
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+from shapely.geometry import Point
+import branca.colormap as cm
+
+# Load the wells_df
+columns = [
+    'API 14', 'Surface Longitude', 'Surface Latitude',
+    'EUR/PLL (BBL/FT) 6 Months', 'EUR/PLL (BBL/FT) 12 Months', 'EUR/PLL (BBL/FT) 18 Months',
+    'EUR/PLL (BBL/FT) 24 Months', 'EUR/PLL (BBL/FT) 30 Months', 'EUR/PLL (BBL/FT) 36 Months',
+    'EUR/PLL (BBL/FT) 42 Months', 'EUR/PLL (BBL/FT) 48 Months', 'EUR/PLL (BBL/FT) 54 Months',
+    'EUR/PLL (BBL/FT) 60 Months'
+]
+wells_df = pd.read_csv('AllWellsNoError.csv', usecols=columns)
+wells_df = wells_df.rename(columns={'Surface Longitude': 'longitude', 'Surface Latitude': 'latitude'})
+wells_df = wells_df[wells_df['latitude'] > 0.1]
+
+for col in columns[3:]:
+    wells_df = wells_df[wells_df[col] > 0.1]
+    wells_df = wells_df[wells_df[col] < np.nanpercentile(wells_df[col], 95)]
+
+wells_df = wells_df.reset_index()
+
+# Calculate percent errors
+for col in columns[3:-1]:
+    wells_df[col] = (wells_df[col] - wells_df['EUR/PLL (BBL/FT) 60 Months']) / wells_df['EUR/PLL (BBL/FT) 60 Months'] * 100
+
+# Calculate mean latitude and longitude
+mean_latitude = wells_df['latitude'].mean()
+mean_longitude = wells_df['longitude'].mean()
+
+# Convert well data to GeoDataFrame
+geometry = [Point(xy) for xy in zip(wells_df['longitude'], wells_df['latitude'])]
+geo_data = gpd.GeoDataFrame(wells_df, geometry=geometry)
+
+# Set the CRS to WGS84 (EPSG:4326)
+geo_data.set_crs(epsg=4326, inplace=True)
+
+# Load the township boundaries shapefile
+shape_data = gpd.read_file('PLSSFirstDivision.geojson')  # Replace with your shapefile path
+
+# Ensure the CRS for the township boundaries is set to WGS84
+shape_data.to_crs(epsg=4326, inplace=True)
+
+# Spatial join to assign points to township polygons
+joined = gpd.sjoin(geo_data, shape_data, how='left', op='within')
+
+# Calculate average values for each township polygon
+avg_col_names = []
+
+for col in columns[3:-1]:
+    months = col.split()[2]
+    avg_col_name = f'avg_{months}_months'
+    shape_data[avg_col_name] = joined.groupby('index_right')[col].mean()
+    avg_col_names.append(avg_col_name)
+
+# Drop sections where all the average values are 0
+shape_data = shape_data[(shape_data[avg_col_names] > 0).any(axis=1)]
+
+# Create colormaps for each time period
+colormaps = {}
+for col in avg_col_names:
+    colormaps[col] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                       vmin=-25, vmax=25, caption=f'Percent Error ({col})')
+
+# Create GeoJSON data for each dataset
+geojson_data = {}
+for col in avg_col_names:
+    geojson_data[col] = shape_data[['geometry', col]].to_json()
+
+# Load the second shapefile
+shape_data2 = gpd.read_file('PLSSTownship.geojson')  # Replace with your second shapefile path
+shape_data2.set_crs(epsg=4326, inplace=True)
+
+# Spatial join to assign points to township polygons for the second shapefile
+joined2 = gpd.sjoin(geo_data, shape_data2, how='left', op='within')
+
+for col in columns[3:-1]:
+    months = col.split()[2]
+    avg_col_name = f'avg_{months}_months'
+    shape_data2[avg_col_name] = joined2.groupby('index_right')[col].mean()
+    avg_col_names.append(avg_col_name)
+
+# Drop sections where all the average values are 0 for the second shapefile
+shape_data2 = shape_data2[(shape_data2[avg_col_names] > 0).any(axis=1)]
+
+# Create colormaps and GeoJSON data for the second shapefile
+colormaps2 = {}
+geojson_data2 = {}
+for col in avg_col_names:
+    colormaps2[col] = cm.LinearColormap(colors=['blue', 'green', 'yellow', 'orange', 'red'],
+                                        vmin=-25, vmax=25, caption=f'Percent Error ({col})')
+    geojson_data2[col] = shape_data2[['geometry', col]].to_json()
+
+# Generate HTML
+html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href=https://unpkg.com/leaflet@1.7.1/dist/leaflet.css />
+    <style>
+        html, body {{
+            height: 100%;
+            margin: 0;
+        }}
+        #map {{
+            width: 100%;
+            height: 100%;
+        }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+        .legend {{
+            position: absolute;
+            top: 10px;
+            right: 50px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }}
+    </style>
+    <script src=https://unpkg.com/leaflet@1.7.1/dist/leaflet.js></script>
+    <script src=https://d3js.org/d3.v5.min.js></script>
+</head>
+<body>
+    <div id="controls">
+        <select id="layer-select" onchange="updateMap()">
+"""
+
+# Add options to the dropdown menu for the first shapefile
+html_template += '<optgroup label="Sections">\n'
+for col in avg_col_names:
+    html_template += f'<option value="1_{col}">{col}</option>\n'
+html_template += '</optgroup>\n'
+
+# Add options to the dropdown menu for the second shapefile
+html_template += '<optgroup label="Townships">\n'
+for col in avg_col_names:
+    html_template += f'<option value="2_{col}">{col}</option>\n'
+html_template += '</optgroup>\n'
+
+html_template += f"""
+        </select>
+    </div>
+    <div id="map"></div>
+    <div class="legend" id="legend"></div>
+    <script>
+        var map = L.map('map').setView([{mean_latitude}, {mean_longitude}], 10);
+
+        L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+            maxZoom: 18,
+            attribution: '&copy; <a href=https://www.openstreetmap.org/copyright>OpenStreetMap</a> contributors'
+        }}).addTo(map);
+
+        var colormaps = {{}};
+        var colormaps2 = {{}};
+"""
+
+# Add colormaps to the HTML for the first shapefile
+for col in avg_col_names:
+    html_template += f"""
+        colormaps['{col}'] = d3.scaleThreshold()
+            .domain([-25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25])
+            .range(["#0000ff", "#3399ff", "#66ccff", "#99ccff", "#ccccff", "#ffffff", "#ffcccc", "#ff9999", "#ff6666", "#ff3333", "#ff0000"]);
+    """
+
+# Add colormaps to the HTML for the second shapefile
+for col in avg_col_names:
+    html_template += f"""
+        colormaps2['{col}'] = d3.scaleThreshold()
+            .domain([-25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25])
+            .range(["#0000ff", "#3399ff", "#66ccff", "#99ccff", "#ccccff", "#ffffff", "#ffcccc", "#ff9999", "#ff6666", "#ff3333", "#ff0000"]);
+    """
+
+# Add styles to the HTML for the first shapefile
+for col in avg_col_names:
+    html_template += f"""
+        function style_{col}(feature) {{
+            return {{
+                fillColor: colormaps['{col}'](feature.properties.{col}),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+    """
+
+# Add styles to the HTML for the second shapefile
+for col in avg_col_names:
+    html_template += f"""
+        function style2_{col}(feature) {{
+            return {{
+                fillColor: colormaps2['{col}'](feature.properties.{col}),
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7
+            }};
+        }}
+    """
+
+# Add layers to the HTML for the first shapefile
+for col in avg_col_names:
+    html_template += f"""
+        var layer_1_{col} = L.geoJson({geojson_data[col]}, {{
+            style: style_{col},
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('Percent Error ({col}): ' + feature.properties.{col}.toFixed(2) + '%');
+            }}
+        }});
+        window['layer_1_{col}'] = layer_1_{col};
+        console.log('Defined layer_1_{col}');
+    """
+
+# Add layers to the HTML for the second shapefile
+for col in avg_col_names:
+    html_template += f"""
+        var layer_2_{col} = L.geoJson({geojson_data2[col]}, {{
+            style: style2_{col},
+            onEachFeature: function (feature, layer) {{
+                layer.bindPopup('Percent Error ({col}): ' + feature.properties.{col}.toFixed(2) + '%');
+            }}
+        }});
+        window['layer_2_{col}'] = layer_2_{col};
+        console.log('Defined layer_2_{col}');
+    """
+
+html_template += """
+        var currentLayer = window['layer_1_avg_6_months'];
+        currentLayer.addTo(map);
+        console.log('Initialized currentLayer:', currentLayer);
+
+        function updateMap() {
+            var selectedLayer = document.getElementById('layer-select').value;
+            console.log('Selected layer:', selectedLayer);
+            if (currentLayer) {
+                console.log('Removing current layer:', currentLayer);
+                map.removeLayer(currentLayer);
+            }
+            currentLayer = window['layer_' + selectedLayer];
+            console.log('Adding new layer:', currentLayer);
+            if (currentLayer) {
+                currentLayer.addTo(map);
+                var colormapSet = selectedLayer.startsWith("1_") ? colormaps : colormaps2;
+                updateLegend(colormaps[selected_layer], [-25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25]);
+            } else {
+                console.error('Layer not found:', selectedLayer);
+            }
+        }
+
+        function updateLegend(colormap, domain) {
+            var legend = d3.select('#legend');
+            legend.html('<h4>Percent Error</h4>');
+            var legendScale = d3.scaleLinear()
+                .domain([domain[0], domain[domain.length - 1]])
+                .range([0, 300]);
+            var legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickFormat(d3.format(".2f"));
+
+            var svg = legend.append('svg')
+                .attr('width', 320)
+                .attr('height', 50);
+
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', 'translate(10,30)')
+                .call(legendAxis);
+
+            var gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'gradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '0%');
+
+            domain.forEach(function(d, i) {
+                gradient.append('stop')
+                    .attr('offset', (i / (domain.length - 1) * 100) + '%')
+                    .attr('stop-color', colormap(d));
+            });
+
+            svg.append('rect')
+                .attr('width', 300)
+                .attr('height', 10)
+                .attr('x', 10)
+                .attr('y', 20)
+                .style('fill', 'url(#gradient)');
+        }
+
+        updateLegend(colormaps['avg_6_months'], [-25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25]);
+    </script>
+</body>
+</html>
+"""
+
+# Save the HTML template
+with open('dynamic_map_safe.html', 'w') as f:
+    f.write(html_template)
+
+print("HTML file created successfully: dynamic_map.html")
